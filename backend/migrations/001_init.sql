@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS medicines (
     quantity INTEGER NOT NULL DEFAULT 0,
     unit TEXT NOT NULL DEFAULT 'tablets',
     category TEXT NOT NULL DEFAULT 'general',
-    expiration_date DATE,
+    -- Stored as TEXT (YYYY-MM-DD), not DATE: the go-sqlite3 driver auto-parses
+    -- DATE/DATETIME columns into time.Time, which round-trips through *string
+    -- as RFC3339 ("2026-12-31T00:00:00Z") and breaks the API contract.
+    expiration_date TEXT,
     storage_location TEXT,
     barcode TEXT,
     notes TEXT,

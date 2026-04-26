@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full-bleed background (no rounded corners) for maskable -->
+  <rect width="512" height="512" fill="#16213e"/>
+  <!-- Content scaled to fit within the 80% safe zone (centered 410x410) -->
+  <!-- Pill capsule centered at 256,256, scaled to ~55% to stay in safe zone -->
+  <g transform="translate(256,256) scale(0.72) translate(-256,-256)">
+    <path d="M 176 256 A 80 80 0 0 1 256 176 L 256 336 A 80 80 0 0 1 176 256 Z"
+          fill="#4fd1c5" transform="rotate(-45 256 256)"/>
+    <path d="M 256 176 A 80 80 0 0 1 336 256 A 80 80 0 0 1 256 336 L 256 176 Z"
+          fill="#ffffff" transform="rotate(-45 256 256)"/>
+    <line x1="182" y1="182" x2="330" y2="330"
+          stroke="#16213e" stroke-width="6" stroke-linecap="round"/>
+    <rect x="340" y="320" width="14" height="40" rx="7" fill="#4fd1c5"/>
+    <rect x="320" y="340" width="40" height="14" rx="7" fill="#4fd1c5"/>
+  </g>
+</svg>
