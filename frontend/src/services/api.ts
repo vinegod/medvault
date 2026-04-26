@@ -18,11 +18,7 @@ class ApiClient {
     this.accessToken = token;
   }
 
-  async request<T>(
-    method: string,
-    path: string,
-    body?: unknown
-  ): Promise<ApiResponse<T>> {
+  async request<T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
     if (!this.baseUrl) {
       return { data: null, error: { code: "NO_SERVER", message: "No server configured" } };
     }

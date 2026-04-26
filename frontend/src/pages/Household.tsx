@@ -60,13 +60,17 @@ export default function Household() {
       return;
     }
     toast.success(t("household.removed", { name: username }));
-    setDetail((d) => d ? { ...d, members: d.members.filter((m) => m.user_id !== userId) } : d);
+    setDetail((d) => (d ? { ...d, members: d.members.filter((m) => m.user_id !== userId) } : d));
   }
 
   const isOwner = detail?.members.find((m) => m.user_id === user?.id)?.role === "owner";
 
   if (loading) {
-    return <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginTop: "2rem" }}>{t("common.loading")}</p>;
+    return (
+      <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginTop: "2rem" }}>
+        {t("common.loading")}
+      </p>
+    );
   }
 
   if (!detail) {
@@ -96,7 +100,13 @@ export default function Household() {
               <div>
                 <strong>{m.username}</strong>
                 {m.user_id === user?.id && <span style={youBadge}>{t("household.you_badge")}</span>}
-                <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", textTransform: "capitalize" }}>
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    color: "var(--color-text-muted)",
+                    textTransform: "capitalize",
+                  }}
+                >
                   {m.role}
                 </div>
               </div>
@@ -117,17 +127,40 @@ export default function Household() {
       {isOwner && (
         <section style={card}>
           <h3 style={cardTitle}>{t("household.invite_title")}</h3>
-          <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem", margin: "0.5rem 0 1rem" }}>
+          <p
+            style={{
+              color: "var(--color-text-muted)",
+              fontSize: "0.9rem",
+              margin: "0.5rem 0 1rem",
+            }}
+          >
             {t("household.invite_description")}
           </p>
-          <Button variant="primary" onClick={handleInvite} iconLeft={<Icon name="plus" size={18} />}>
+          <Button
+            variant="primary"
+            onClick={handleInvite}
+            iconLeft={<Icon name="plus" size={18} />}
+          >
             {t("household.new_invite")}
           </Button>
           {invite && (
-            <button onClick={() => copyCode(invite.code)} style={codeBlock} title={t("household.tap_to_copy")}>
-              <span style={{ fontSize: "1.6rem", letterSpacing: "0.18em", fontWeight: 700 }}>{invite.code}</span>
-              <span style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-                {t("household.tap_to_copy")} · {t("household.expires", { date: new Date(invite.expires_at).toLocaleDateString() })}
+            <button
+              onClick={() => copyCode(invite.code)}
+              style={codeBlock}
+              title={t("household.tap_to_copy")}
+            >
+              <span style={{ fontSize: "1.6rem", letterSpacing: "0.18em", fontWeight: 700 }}>
+                {invite.code}
+              </span>
+              <span
+                style={{
+                  fontSize: "0.8rem",
+                  color: "var(--color-text-muted)",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {t("household.tap_to_copy")} ·{" "}
+                {t("household.expires", { date: new Date(invite.expires_at).toLocaleDateString() })}
               </span>
             </button>
           )}
@@ -136,7 +169,9 @@ export default function Household() {
 
       <section style={card}>
         <h3 style={cardTitle}>{t("household.join_title")}</h3>
-        <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem", margin: "0.5rem 0 1rem" }}>
+        <p
+          style={{ color: "var(--color-text-muted)", fontSize: "0.9rem", margin: "0.5rem 0 1rem" }}
+        >
           {t("household.join_description")}
         </p>
         <Link to="/household/join" style={{ textDecoration: "none" }}>

@@ -112,10 +112,7 @@ export async function connectToServer(
     apiClient.setAccessToken(auth.access_token);
 
     // Mark all local records as pending so they sync up
-    await db.medicines
-      .where("sync_status")
-      .equals("local")
-      .modify({ sync_status: "pending" });
+    await db.medicines.where("sync_status").equals("local").modify({ sync_status: "pending" });
 
     setStatus("connected");
 
@@ -124,7 +121,7 @@ export async function connectToServer(
     await performSync();
 
     return { success: true };
-  } catch (err) {
+  } catch {
     setStatus("disconnected");
     return { success: false, error: "Connection failed" };
   }

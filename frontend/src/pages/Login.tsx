@@ -19,9 +19,7 @@ export default function Login() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const result = await connect(
-      serverUrl.trim().replace(/\/$/, ""), username, password, false
-    );
+    const result = await connect(serverUrl.trim().replace(/\/$/, ""), username, password, false);
     setLoading(false);
     if (result.success) {
       toast.success(t("auth.welcome_back", { username }));
@@ -40,22 +38,38 @@ export default function Login() {
         <form onSubmit={handleSubmit} style={form}>
           <label style={lbl}>
             {t("auth.server_url")}
-            <input style={inp} type="url" value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)} required />
+            <input
+              style={inp}
+              type="url"
+              value={serverUrl}
+              onChange={(e) => setServerUrl(e.target.value)}
+              required
+            />
           </label>
 
           <label style={lbl}>
             {t("auth.username")}
-            <input style={inp} type="text" value={username}
+            <input
+              style={inp}
+              type="text"
+              value={username}
               onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username" required autoFocus />
+              autoComplete="username"
+              required
+              autoFocus
+            />
           </label>
 
           <label style={lbl}>
             {t("auth.password")}
-            <input style={inp} type="password" value={password}
+            <input
+              style={inp}
+              type="password"
+              value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password" required />
+              autoComplete="current-password"
+              required
+            />
           </label>
 
           <Button type="submit" disabled={loading} fullWidth size="lg">
@@ -64,7 +78,9 @@ export default function Login() {
         </form>
 
         <div style={footer}>
-          <p>{t("auth.no_account")} <Link to="/register">{t("auth.create_one")}</Link></p>
+          <p>
+            {t("auth.no_account")} <Link to="/register">{t("auth.create_one")}</Link>
+          </p>
           <p style={{ marginTop: "0.5rem" }}>
             <Link to="/medicines">{t("auth.continue_without")}</Link>
           </p>
@@ -75,24 +91,41 @@ export default function Login() {
 }
 
 const page: React.CSSProperties = {
-  minHeight: "100dvh", display: "flex", alignItems: "center",
-  justifyContent: "center", padding: "1rem",
+  minHeight: "100dvh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "1rem",
 };
 const card: React.CSSProperties = {
-  width: "100%", maxWidth: 420,
-  background: "var(--color-surface)", borderRadius: "var(--radius-lg)",
-  padding: "2rem", border: "1px solid var(--color-border)",
+  width: "100%",
+  maxWidth: 420,
+  background: "var(--color-surface)",
+  borderRadius: "var(--radius-lg)",
+  padding: "2rem",
+  border: "1px solid var(--color-border)",
 };
 const title: React.CSSProperties = { fontSize: "1.8rem", marginBottom: "0.25rem" };
 const subtitle: React.CSSProperties = { color: "var(--color-text-muted)", marginBottom: "1.5rem" };
 const form: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "1rem" };
-const lbl: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.85rem", color: "var(--color-text-muted)" };
+const lbl: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.4rem",
+  fontSize: "0.85rem",
+  color: "var(--color-text-muted)",
+};
 const inp: React.CSSProperties = {
-  background: "var(--color-bg)", border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)", padding: "0.7rem 0.85rem",
-  color: "var(--color-text)", fontSize: "1rem",
+  background: "var(--color-bg)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius)",
+  padding: "0.7rem 0.85rem",
+  color: "var(--color-text)",
+  fontSize: "1rem",
 };
 const footer: React.CSSProperties = {
-  marginTop: "1.5rem", fontSize: "0.9rem", color: "var(--color-text-muted)",
+  marginTop: "1.5rem",
+  fontSize: "0.9rem",
+  color: "var(--color-text-muted)",
   textAlign: "center",
 };

@@ -7,12 +7,24 @@ import type { SVGProps } from "react";
 // (single colour, stroke-based) so they inherit text colour via currentColor.
 
 export type IconName =
-  | "pill" | "bell" | "settings"
-  | "plus" | "minus" | "trash"
-  | "search" | "x" | "back"
-  | "check" | "edit" | "users"
-  | "logout" | "download" | "upload"
-  | "warning" | "wifi" | "wifi-off";
+  | "pill"
+  | "bell"
+  | "settings"
+  | "plus"
+  | "minus"
+  | "trash"
+  | "search"
+  | "x"
+  | "back"
+  | "check"
+  | "edit"
+  | "users"
+  | "logout"
+  | "download"
+  | "upload"
+  | "warning"
+  | "wifi"
+  | "wifi-off";
 
 const paths: Record<IconName, JSX.Element> = {
   pill: (

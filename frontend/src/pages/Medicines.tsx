@@ -60,7 +60,11 @@ export default function Medicines() {
   return (
     <>
       <div style={{ marginBottom: "1rem" }}>
-        <SearchBar value={search} onChange={setSearch} placeholder={t("search.medicines_placeholder")} />
+        <SearchBar
+          value={search}
+          onChange={setSearch}
+          placeholder={t("search.medicines_placeholder")}
+        />
       </div>
 
       {medicines === undefined && (

@@ -30,9 +30,7 @@ export async function performSync(): Promise<void> {
     const pendingChanges = await getPendingChanges();
 
     // Strip client-only fields before sending
-    const changes: Medicine[] = pendingChanges.map(
-      ({ sync_status, ...medicine }) => medicine
-    );
+    const changes: Medicine[] = pendingChanges.map(({ sync_status: _, ...medicine }) => medicine);
 
     const response = await apiClient.post<SyncResponse>("/api/sync", {
       last_sync: lastSync,
@@ -56,10 +54,7 @@ export async function performSync(): Promise<void> {
     });
 
     // Mark all pending as synced
-    await db.medicines
-      .where("sync_status")
-      .equals("pending")
-      .modify({ sync_status: "synced" });
+    await db.medicines.where("sync_status").equals("pending").modify({ sync_status: "synced" });
 
     // Update last sync timestamp
     await setMeta("last_sync", response.data.server_time);

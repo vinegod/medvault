@@ -18,7 +18,13 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
   return (
     <button
       ref={ref}
-      style={{ ...base, ...sizes[size], ...variants[variant], ...(fullWidth && { width: "100%" }), ...style }}
+      style={{
+        ...base,
+        ...sizes[size],
+        ...variants[variant],
+        ...(fullWidth && { width: "100%" }),
+        ...style,
+      }}
       {...rest}
     >
       {iconLeft}

@@ -4,8 +4,8 @@ import { Icon, type IconName } from "./Icon";
 
 const tabDefs: { to: string; labelKey: string; icon: IconName }[] = [
   { to: "/medicines", labelKey: "nav.medicines", icon: "pill" },
-  { to: "/alerts",    labelKey: "nav.alerts",    icon: "bell" },
-  { to: "/settings",  labelKey: "nav.settings",  icon: "settings" },
+  { to: "/alerts", labelKey: "nav.alerts", icon: "bell" },
+  { to: "/settings", labelKey: "nav.settings", icon: "settings" },
 ];
 
 export function BottomNav() {
@@ -13,7 +13,11 @@ export function BottomNav() {
   return (
     <nav style={nav}>
       {tabDefs.map((tab) => (
-        <NavLink key={tab.to} to={tab.to} style={({ isActive }) => ({ ...tabStyle, ...(isActive ? tabActive : null) })}>
+        <NavLink
+          key={tab.to}
+          to={tab.to}
+          style={({ isActive }) => ({ ...tabStyle, ...(isActive ? tabActive : null) })}
+        >
           <Icon name={tab.icon} size={22} />
           <span style={tabLabel}>{t(tab.labelKey)}</span>
         </NavLink>

@@ -27,11 +27,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((t) => t.filter((x) => x.id !== id));
   }, []);
 
-  const show = useCallback((type: ToastType, message: string, ms = 3000) => {
-    const id = ++nextId;
-    setToasts((t) => [...t, { id, type, message }]);
-    setTimeout(() => dismiss(id), ms);
-  }, [dismiss]);
+  const show = useCallback(
+    (type: ToastType, message: string, ms = 3000) => {
+      const id = ++nextId;
+      setToasts((t) => [...t, { id, type, message }]);
+      setTimeout(() => dismiss(id), ms);
+    },
+    [dismiss]
+  );
 
   const value: ToastContextValue = {
     show,
@@ -102,6 +105,10 @@ const toast: React.CSSProperties = {
 
 const toastStyles: Record<ToastType, React.CSSProperties> = {
   success: { background: "#1a3a2a", color: "#a8efc6", borderColor: "#2c5b42" },
-  error:   { background: "#3a1a22", color: "#ffc4cf", borderColor: "#7a2c3c" },
-  info:    { background: "var(--color-surface-2)", color: "var(--color-text)", borderColor: "var(--color-border)" },
+  error: { background: "#3a1a22", color: "#ffc4cf", borderColor: "#7a2c3c" },
+  info: {
+    background: "var(--color-surface-2)",
+    color: "var(--color-text)",
+    borderColor: "var(--color-border)",
+  },
 };

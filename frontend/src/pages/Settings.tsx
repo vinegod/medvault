@@ -52,17 +52,32 @@ export default function Settings() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <section style={card}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
-          <Icon name={isConnected ? "wifi" : "wifi-off"} size={20}
-            style={{ color: isConnected ? "var(--color-success)" : "var(--color-text-muted)" }} />
+        <div
+          style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}
+        >
+          <Icon
+            name={isConnected ? "wifi" : "wifi-off"}
+            size={20}
+            style={{ color: isConnected ? "var(--color-success)" : "var(--color-text-muted)" }}
+          />
           <h3 style={cardTitle}>{t("settings.server_title")}</h3>
         </div>
 
         {isConnected ? (
           <>
             <div style={{ marginBottom: "1rem" }}>
-              <div>{t("settings.connected_as")} <strong>{user?.username}</strong></div>
-              <div style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", marginTop: "0.25rem" }}>{serverUrl}</div>
+              <div>
+                {t("settings.connected_as")} <strong>{user?.username}</strong>
+              </div>
+              <div
+                style={{
+                  color: "var(--color-text-muted)",
+                  fontSize: "0.85rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {serverUrl}
+              </div>
             </div>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <Link to="/household" style={{ textDecoration: "none" }}>
@@ -88,10 +103,14 @@ export default function Settings() {
             </p>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <Link to="/login" style={{ flex: 1, textDecoration: "none" }}>
-                <Button variant="primary" fullWidth>{t("common.log_in")}</Button>
+                <Button variant="primary" fullWidth>
+                  {t("common.log_in")}
+                </Button>
               </Link>
               <Link to="/register" style={{ flex: 1, textDecoration: "none" }}>
-                <Button variant="secondary" fullWidth>{t("common.register")}</Button>
+                <Button variant="secondary" fullWidth>
+                  {t("common.register")}
+                </Button>
               </Link>
             </div>
           </>
@@ -104,7 +123,11 @@ export default function Settings() {
           {t("settings.backup_description")}
         </p>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <Button variant="secondary" onClick={handleExport} iconLeft={<Icon name="download" size={18} />}>
+          <Button
+            variant="secondary"
+            onClick={handleExport}
+            iconLeft={<Icon name="download" size={18} />}
+          >
             {t("common.export")}
           </Button>
           <label style={importBtn}>
@@ -121,7 +144,9 @@ export default function Settings() {
           <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem", marginBottom: "1rem" }}>
             {t("settings.pwa_description")}
           </p>
-          <Button variant="primary" onClick={install}>{t("common.install")}</Button>
+          <Button variant="primary" onClick={install}>
+            {t("common.install")}
+          </Button>
         </section>
       )}
 
@@ -134,7 +159,8 @@ export default function Settings() {
               onClick={() => i18n.changeLanguage(lang)}
               style={{
                 ...langBtn,
-                background: i18n.language === lang ? "var(--color-accent)" : "var(--color-surface-2)",
+                background:
+                  i18n.language === lang ? "var(--color-accent)" : "var(--color-surface-2)",
                 color: i18n.language === lang ? "#fff" : "var(--color-text)",
                 borderColor: i18n.language === lang ? "var(--color-accent)" : "var(--color-border)",
               }}

@@ -21,15 +21,33 @@ function MedicineLink({ m, color }: { m: LocalMedicine; color: string }) {
   );
 }
 
-function Section({ title, color, items }: { title: string; color: string; items: LocalMedicine[] }) {
+function Section({
+  title,
+  color,
+  items,
+}: {
+  title: string;
+  color: string;
+  items: LocalMedicine[];
+}) {
   if (!items.length) return null;
   return (
     <div style={{ marginBottom: "1.5rem" }}>
-      <h3 style={{ color, marginBottom: "0.6rem", fontSize: "0.9rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <h3
+        style={{
+          color,
+          marginBottom: "0.6rem",
+          fontSize: "0.9rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+        }}
+      >
         {title} · {items.length}
       </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        {items.map((m) => <MedicineLink key={m.id} m={m} color={color} />)}
+        {items.map((m) => (
+          <MedicineLink key={m.id} m={m} color={color} />
+        ))}
       </div>
     </div>
   );
@@ -59,8 +77,8 @@ export default function Alerts() {
 
   return (
     <div>
-      <Section title={t("alerts.expired")}     color="var(--color-error)"      items={expired} />
-      <Section title={t("alerts.expiring_30")} color="var(--color-warning)"    items={soon} />
+      <Section title={t("alerts.expired")} color="var(--color-error)" items={expired} />
+      <Section title={t("alerts.expiring_30")} color="var(--color-warning)" items={soon} />
       <Section title={t("alerts.expiring_90")} color="var(--color-text-muted)" items={upcoming} />
     </div>
   );

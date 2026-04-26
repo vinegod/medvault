@@ -9,19 +9,19 @@ export function Header() {
   const { t } = useTranslation();
 
   const titles: Record<string, { title: string; back?: boolean }> = {
-    "/medicines":      { title: t("header.medicines") },
-    "/medicines/new":  { title: t("header.add_medicine"), back: true },
-    "/alerts":         { title: t("header.alerts") },
-    "/settings":       { title: t("header.settings") },
-    "/household":      { title: t("header.household"), back: true },
+    "/medicines": { title: t("header.medicines") },
+    "/medicines/new": { title: t("header.add_medicine"), back: true },
+    "/alerts": { title: t("header.alerts") },
+    "/settings": { title: t("header.settings") },
+    "/household": { title: t("header.household"), back: true },
     "/household/join": { title: t("header.join_household"), back: true },
   };
 
-  const entry = titles[pathname] ?? (
-    pathname.startsWith("/medicines/") && pathname.endsWith("/edit")
+  const entry =
+    titles[pathname] ??
+    (pathname.startsWith("/medicines/") && pathname.endsWith("/edit")
       ? { title: t("header.edit_medicine"), back: true }
-      : { title: t("header.fallback") }
-  );
+      : { title: t("header.fallback") });
 
   return (
     <header style={header}>

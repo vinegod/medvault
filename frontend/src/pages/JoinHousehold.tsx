@@ -18,10 +18,9 @@ export default function JoinHousehold() {
     e.preventDefault();
     setLoading(true);
 
-    const res = await apiClient.post<{ household_id: string }>(
-      "/api/households/join",
-      { code: code.trim().toUpperCase() }
-    );
+    const res = await apiClient.post<{ household_id: string }>("/api/households/join", {
+      code: code.trim().toUpperCase(),
+    });
 
     if (res.data) {
       await db.medicines.clear();
@@ -43,7 +42,10 @@ export default function JoinHousehold() {
         {t("join_household.description")}
       </p>
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+      >
         <input
           style={inp}
           value={code}

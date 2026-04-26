@@ -9,8 +9,7 @@ class MedVaultDB extends Dexie {
     super("MedVault");
 
     this.version(1).stores({
-      medicines:
-        "id, name, category, expiration_date, updated_at, sync_status, deleted_at",
+      medicines: "id, name, category, expiration_date, updated_at, sync_status, deleted_at",
       meta: "key", // stores last_sync, server_url, auth tokens, user settings
     });
   }
@@ -52,10 +51,7 @@ export async function addMedicine(input: MedicineInput): Promise<LocalMedicine> 
   return medicine;
 }
 
-export async function updateMedicine(
-  id: string,
-  changes: Partial<MedicineInput>
-): Promise<void> {
+export async function updateMedicine(id: string, changes: Partial<MedicineInput>): Promise<void> {
   const now = new Date().toISOString();
   const isServerConnected = await getMeta("server_url");
 
@@ -106,10 +102,7 @@ export async function getExpiringMedicines(withinDays: number): Promise<LocalMed
 
   return db.medicines
     .filter(
-      (m) =>
-        m.deleted_at === null &&
-        m.expiration_date !== null &&
-        m.expiration_date <= cutoffStr
+      (m) => m.deleted_at === null && m.expiration_date !== null && m.expiration_date <= cutoffStr
     )
     .sortBy("expiration_date");
 }
@@ -118,10 +111,7 @@ export async function getExpiredMedicines(): Promise<LocalMedicine[]> {
   const todayStr = new Date().toISOString().split("T")[0];
   return db.medicines
     .filter(
-      (m) =>
-        m.deleted_at === null &&
-        m.expiration_date !== null &&
-        m.expiration_date < todayStr
+      (m) => m.deleted_at === null && m.expiration_date !== null && m.expiration_date < todayStr
     )
     .sortBy("expiration_date");
 }
@@ -152,7 +142,7 @@ export async function exportAll(): Promise<string> {
   const exportData: MedVaultExport = {
     version: 1,
     exported_at: new Date().toISOString(),
-    medicines: medicines.map(({ sync_status, ...rest }) => rest),
+    medicines: medicines.map(({ sync_status: _, ...rest }) => rest),
     settings,
   };
 

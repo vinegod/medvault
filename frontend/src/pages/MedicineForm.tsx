@@ -6,11 +6,27 @@ import { Button } from "../components/Button";
 import { useToast } from "../contexts/ToastContext";
 import type { MedicineInput, MedicineUnit } from "../types";
 
-const UNITS: MedicineUnit[] = ["tablets", "capsules", "ml", "mg", "g", "pieces", "drops", "sachets", "patches"];
+const UNITS: MedicineUnit[] = [
+  "tablets",
+  "capsules",
+  "ml",
+  "mg",
+  "g",
+  "pieces",
+  "drops",
+  "sachets",
+  "patches",
+];
 
 const EMPTY: MedicineInput = {
-  name: "", quantity: 0, unit: "tablets", category: "",
-  expiration_date: "", storage_location: "", barcode: "", notes: "",
+  name: "",
+  quantity: 0,
+  unit: "tablets",
+  category: "",
+  expiration_date: "",
+  storage_location: "",
+  barcode: "",
+  notes: "",
 };
 
 export default function MedicineForm() {
@@ -50,8 +66,14 @@ export default function MedicineForm() {
     e.preventDefault();
     setError("");
 
-    if (!fields.name.trim()) { setError(t("medicine_form.name_required")); return; }
-    if (fields.quantity < 0) { setError(t("medicine_form.quantity_negative")); return; }
+    if (!fields.name.trim()) {
+      setError(t("medicine_form.name_required"));
+      return;
+    }
+    if (fields.quantity < 0) {
+      setError(t("medicine_form.quantity_negative"));
+      return;
+    }
 
     const payload: MedicineInput = {
       ...fields,
@@ -78,52 +100,91 @@ export default function MedicineForm() {
   return (
     <form onSubmit={handleSubmit} style={formStyle}>
       <Field label={t("medicine_form.name")} required>
-        <input style={inp} value={fields.name}
+        <input
+          style={inp}
+          value={fields.name}
           onChange={(e) => set("name", e.target.value)}
-          placeholder={t("medicine_form.name_placeholder")} maxLength={200} required autoFocus={!isEdit} />
+          placeholder={t("medicine_form.name_placeholder")}
+          maxLength={200}
+          required
+          autoFocus={!isEdit}
+        />
       </Field>
 
       <div style={{ display: "flex", gap: "0.75rem" }}>
         <Field label={t("medicine_form.quantity")} style={{ flex: 1 }}>
-          <input style={inp} type="number" inputMode="numeric" min={0} max={99999}
+          <input
+            style={inp}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={99999}
             value={fields.quantity}
-            onChange={(e) => set("quantity", Number(e.target.value))} />
+            onChange={(e) => set("quantity", Number(e.target.value))}
+          />
         </Field>
         <Field label={t("medicine_form.unit")} style={{ flex: 1 }}>
-          <select style={inp} value={fields.unit}
-            onChange={(e) => set("unit", e.target.value as MedicineUnit)}>
-            {UNITS.map((u) => <option key={u} value={u}>{t(`units.${u}`)}</option>)}
+          <select
+            style={inp}
+            value={fields.unit}
+            onChange={(e) => set("unit", e.target.value as MedicineUnit)}
+          >
+            {UNITS.map((u) => (
+              <option key={u} value={u}>
+                {t(`units.${u}`)}
+              </option>
+            ))}
           </select>
         </Field>
       </div>
 
       <Field label={t("medicine_form.category")}>
-        <input style={inp} value={fields.category}
+        <input
+          style={inp}
+          value={fields.category}
           onChange={(e) => set("category", e.target.value)}
-          placeholder={t("medicine_form.category_placeholder")} maxLength={50} />
+          placeholder={t("medicine_form.category_placeholder")}
+          maxLength={50}
+        />
       </Field>
 
       <Field label={t("medicine_form.expiration_date")}>
-        <input style={inp} type="date" value={fields.expiration_date ?? ""}
-          onChange={(e) => set("expiration_date", e.target.value)} />
+        <input
+          style={inp}
+          type="date"
+          value={fields.expiration_date ?? ""}
+          onChange={(e) => set("expiration_date", e.target.value)}
+        />
       </Field>
 
       <Field label={t("medicine_form.storage_location")}>
-        <input style={inp} value={fields.storage_location}
+        <input
+          style={inp}
+          value={fields.storage_location}
           onChange={(e) => set("storage_location", e.target.value)}
-          placeholder={t("medicine_form.storage_placeholder")} maxLength={100} />
+          placeholder={t("medicine_form.storage_placeholder")}
+          maxLength={100}
+        />
       </Field>
 
       <Field label={t("medicine_form.barcode")}>
-        <input style={inp} value={fields.barcode}
+        <input
+          style={inp}
+          value={fields.barcode}
           onChange={(e) => set("barcode", e.target.value)}
-          placeholder={t("medicine_form.barcode_placeholder")} maxLength={50} />
+          placeholder={t("medicine_form.barcode_placeholder")}
+          maxLength={50}
+        />
       </Field>
 
       <Field label={t("medicine_form.notes")}>
-        <textarea style={{ ...inp, resize: "vertical", minHeight: 80 }}
-          value={fields.notes} onChange={(e) => set("notes", e.target.value)}
-          placeholder={t("medicine_form.notes_placeholder")} maxLength={500} />
+        <textarea
+          style={{ ...inp, resize: "vertical", minHeight: 80 }}
+          value={fields.notes}
+          onChange={(e) => set("notes", e.target.value)}
+          placeholder={t("medicine_form.notes_placeholder")}
+          maxLength={500}
+        />
       </Field>
 
       {error && <p style={{ color: "var(--color-error)", fontSize: "0.9rem" }}>{error}</p>}
@@ -140,13 +201,22 @@ export default function MedicineForm() {
   );
 }
 
-function Field({ label, required, children, style }: {
-  label: string; required?: boolean; children: React.ReactNode; style?: React.CSSProperties;
+function Field({
+  label,
+  required,
+  children,
+  style,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
 }) {
   return (
     <label style={{ ...lblStyle, ...style }}>
       <span style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
-        {label}{required && <span style={{ color: "var(--color-accent)" }}> *</span>}
+        {label}
+        {required && <span style={{ color: "var(--color-accent)" }}> *</span>}
       </span>
       {children}
     </label>
@@ -156,7 +226,11 @@ function Field({ label, required, children, style }: {
 const formStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "1rem" };
 const lblStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "0.35rem" };
 const inp: React.CSSProperties = {
-  background: "var(--color-surface)", border: "1px solid var(--color-border)",
-  borderRadius: "var(--radius)", padding: "0.7rem 0.85rem",
-  color: "var(--color-text)", fontSize: "1rem", outline: "none",
+  background: "var(--color-surface)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius)",
+  padding: "0.7rem 0.85rem",
+  color: "var(--color-text)",
+  fontSize: "1rem",
+  outline: "none",
 };

@@ -24,7 +24,9 @@ function ConnectedOnly() {
 function InitializingScreen() {
   const { t } = useTranslation();
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100dvh" }}>
+    <div
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100dvh" }}
+    >
       <p style={{ color: "var(--color-text-muted)" }}>{t("common.loading")}</p>
     </div>
   );
