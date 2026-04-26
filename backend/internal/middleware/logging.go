@@ -25,7 +25,7 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	}
 	n, err := s.ResponseWriter.Write(b)
 	s.bytes += n
-	return n, err
+	return n, err //nolint:wrapcheck // transparent pass-through; wrapping would obscure the real net/http error
 }
 
 // Logging emits one structured log line per request: method, path, status,

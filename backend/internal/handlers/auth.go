@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -200,7 +201,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		 WHERE token_hash = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?`,
 		tokenHash, claims.UserID, time.Now().UTC(),
 	).Scan(&storedID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		api.WriteError(w, http.StatusUnauthorized, models.CodeUnauthorized, "refresh token not recognised or revoked")
 		return
 	}
@@ -268,7 +269,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // issueTokens generates and stores a fresh access+refresh pair.
 // Returns (response, true) on success; on failure it writes the error and returns false.
-func (h *AuthHandler) issueTokens(w http.ResponseWriter, r *http.Request, userID, username string, createdAt time.Time) (authResponse, bool) {
+func (h *AuthHandler) issueTokens(
+	w http.ResponseWriter,
+	r *http.Request,
+	userID, username string,
+	createdAt time.Time,
+) (authResponse, bool) {
 	accessToken, err := auth.GenerateAccessToken(h.JWTSecret, userID, username, h.AccessTTL)
 	if err != nil {
 		slog.Error("issueTokens: generate access token", "err", err)

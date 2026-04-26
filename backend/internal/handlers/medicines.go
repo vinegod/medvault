@@ -3,6 +3,8 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -23,12 +25,16 @@ type MedicineHandler struct {
 // Column order must match every SELECT that uses this helper.
 func scanMedicine(row interface {
 	Scan(...any) error
-}, m *models.Medicine) error {
-	return row.Scan(
+}, m *models.Medicine,
+) error {
+	if err := row.Scan(
 		&m.ID, &m.Name, &m.Quantity, &m.Unit, &m.Category,
 		&m.ExpirationDate, &m.StorageLocation, &m.Barcode, &m.Notes,
 		&m.CreatedAt, &m.UpdatedAt, &m.DeletedAt,
-	)
+	); err != nil {
+		return fmt.Errorf("scan medicine: %w", err)
+	}
+	return nil
 }
 
 // medicineSelectFrom is the standard projection used by every read.
@@ -54,7 +60,7 @@ func (h *MedicineHandler) List(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
 
 	medicines := []models.Medicine{}
 	for rows.Next() {
@@ -85,7 +91,7 @@ func (h *MedicineHandler) Get(w http.ResponseWriter, r *http.Request) {
 		medicineSelectFrom+` WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
 		id, householdID,
 	), &m)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		api.WriteError(w, http.StatusNotFound, models.CodeNotFound, "medicine not found")
 		return
 	}

@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
-
 	"github.com/vinegod/medvault/backend/internal/api"
 	"github.com/vinegod/medvault/backend/internal/database"
 	"github.com/vinegod/medvault/backend/internal/handlers"
@@ -42,7 +41,7 @@ func main() {
 	log.Printf("MedVault %s starting on port %s", version.Version, cfg.port)
 
 	if dir := filepath.Dir(cfg.dbPath); dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			log.Fatalf("create data directory: %v", err)
 		}
 	}
@@ -51,15 +50,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}
-	defer db.Close()
 
 	if err := database.Migrate(db, cfg.migrationsDir); err != nil {
+		_ = db.Close()
 		log.Fatalf("migrate: %v", err)
 	}
+	defer db.Close() //nolint:errcheck // best-effort cleanup on shutdown
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           buildRouter(db, cfg),
+		Handler:           buildRouter(db, &cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -137,7 +137,7 @@ func parseDuration(key string, fallback time.Duration) time.Duration {
 //     the household middleware (which injects household_id into context).
 //   - Anything not matched falls through to the SPA handler so React Router
 //     can take over for client-side routes.
-func buildRouter(db *sql.DB, cfg config) http.Handler {
+func buildRouter(db *sql.DB, cfg *config) http.Handler {
 	authH := &handlers.AuthHandler{
 		DB:         db,
 		JWTSecret:  cfg.jwtSecret,

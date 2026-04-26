@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -25,7 +27,7 @@ const inviteCodeCharset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // 32 chars, no amb
 func generateInviteCode() (string, error) {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", fmt.Errorf("generate invite code: %w", err)
 	}
 	code := make([]byte, 8)
 	for i, v := range b {
@@ -47,7 +49,7 @@ func (h *HouseholdHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 		&detail.ID, &detail.Name, &detail.CreatedBy,
 		&detail.CreatedAt, &detail.UpdatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		api.WriteError(w, http.StatusNotFound, models.CodeNotFound, "household not found")
 		return
 	}
@@ -70,7 +72,7 @@ func (h *HouseholdHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
 
 	detail.Members = []models.MemberView{}
 	for rows.Next() {
@@ -164,7 +166,7 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		&invite.Code, &invite.HouseholdID, &invite.InvitedBy,
 		&invite.ExpiresAt, &invite.UsedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "invalid or expired invite code")
 		return
 	}
@@ -197,7 +199,7 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
 
 	if _, err = tx.ExecContext(r.Context(),
 		`INSERT INTO memberships (user_id, household_id, role, joined_at)

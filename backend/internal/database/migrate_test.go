@@ -23,7 +23,7 @@ func openDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
@@ -149,7 +149,7 @@ func columnSet(t *testing.T, db *sql.DB, table string) map[string]struct{} {
 	if err != nil {
 		t.Fatalf("pragma table_info: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
 
 	cols := map[string]struct{}{}
 	for rows.Next() {
@@ -175,7 +175,7 @@ func indexSet(t *testing.T, db *sql.DB, table string) map[string]struct{} {
 	if err != nil {
 		t.Fatalf("pragma index_list: %v", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
 
 	idx := map[string]struct{}{}
 	for rows.Next() {

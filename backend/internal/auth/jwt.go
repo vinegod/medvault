@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -34,7 +35,7 @@ func GenerateAccessToken(secret, userID, username string, ttl time.Duration) (st
 
 	signed, err := token.SignedString([]byte(secret))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("sign access token: %w", err)
 	}
 
 	return signed, nil
@@ -54,7 +55,7 @@ func GenerateRefreshToken(secret, userID string, ttl time.Duration) (string, err
 
 	signed, err := token.SignedString([]byte(secret))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("sign refresh token: %w", err)
 	}
 
 	return signed, nil
@@ -69,7 +70,7 @@ func ValidateToken(secret, tokenStr string) (*Claims, error) {
 		return []byte(secret), nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse token: %w", err)
 	}
 
 	claims, ok := token.Claims.(*Claims)
@@ -84,7 +85,7 @@ func ValidateToken(secret, tokenStr string) (*Claims, error) {
 func HashPassword(plain string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcryptCost)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("hash password: %w", err)
 	}
 
 	return string(hash), nil

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/vinegod/medvault/backend/internal/auth"
 	"github.com/vinegod/medvault/backend/internal/middleware"
 	"github.com/vinegod/medvault/backend/internal/models"
@@ -38,7 +37,7 @@ func runWithUserID(t *testing.T, db *sql.DB, userID string) (*httptest.ResponseR
 
 	wrapped := middleware.RequireHousehold(db)(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	if userID != "" {
 		// Mimic what RequireAuth would do upstream: stash user_id in ctx.
 		req = req.WithContext(injectUserID(req.Context(), userID))
@@ -60,7 +59,7 @@ func injectUserID(ctx context.Context, userID string) context.Context {
 		panic(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody).WithContext(ctx)
 	req.Header.Set("Authorization", "Bearer "+tok)
 
 	var out context.Context
@@ -134,7 +133,7 @@ func TestRequireHousehold_MissingUserID(t *testing.T) {
 	})
 	wrapped := middleware.RequireHousehold(db)(handler)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil) // no ctx user_id
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody) // no ctx user_id
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 

@@ -31,6 +31,7 @@ func Migrate(db *sql.DB, migrationsDir string) error {
 			continue
 		}
 
+		//nolint:gosec // migrationsDir is admin-configured, not user input
 		content, err := os.ReadFile(filepath.Join(migrationsDir, name))
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)

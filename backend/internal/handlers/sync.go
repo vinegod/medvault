@@ -26,14 +26,14 @@ type SyncHandler struct {
 
 // syncRequest mirrors the frontend SyncRequest type.
 type syncRequest struct {
-	LastSync *string          `json:"last_sync"` // null = first sync
+	LastSync *string           `json:"last_sync"` // null = first sync
 	Changes  []models.Medicine `json:"changes"`
 }
 
 // syncResponse mirrors the frontend SyncResponse type.
 type syncResponse struct {
 	Records    []models.Medicine `json:"records"`
-	ServerTime string           `json:"server_time"`
+	ServerTime string            `json:"server_time"`
 }
 
 // Sync handles POST /api/sync.
@@ -66,9 +66,10 @@ func (h *SyncHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
 
-	for i, c := range req.Changes {
+	for i := range req.Changes {
+		c := req.Changes[i]
 		// Run the same validation Create/Update enforce so a buggy or
 		// malicious client can't slip oversized notes, HTML in names,
 		// invalid units, malformed dates, etc. through the sync path.
@@ -132,42 +133,9 @@ func (h *SyncHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the response: all records the client doesn't have yet.
-	// last_sync == nil means the client wants everything.
-	var (
-		rows *sql.Rows
-		qErr error
-	)
-	if req.LastSync == nil {
-		rows, qErr = h.DB.QueryContext(r.Context(),
-			medicineSelectFrom+` WHERE household_id = ?`,
-			householdID,
-		)
-	} else {
-		rows, qErr = h.DB.QueryContext(r.Context(),
-			medicineSelectFrom+` WHERE household_id = ? AND updated_at > ?`,
-			householdID, *req.LastSync,
-		)
-	}
-	if qErr != nil {
-		slog.Error("sync: query records", "err", qErr)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
-		return
-	}
-	defer rows.Close()
-
-	records := []models.Medicine{}
-	for rows.Next() {
-		var m models.Medicine
-		if err := scanMedicine(rows, &m); err != nil {
-			slog.Error("sync: scan record", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
-			return
-		}
-		records = append(records, m)
-	}
-	if err := rows.Err(); err != nil {
-		slog.Error("sync: rows error", "err", err)
+	records, err := h.queryRecords(r, householdID, req.LastSync)
+	if err != nil {
+		slog.Error("sync: query records", "err", err)
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
@@ -176,4 +144,41 @@ func (h *SyncHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		Records:    records,
 		ServerTime: time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// queryRecords fetches all household medicines updated since lastSync.
+// If lastSync is nil the full set is returned (first sync).
+func (h *SyncHandler) queryRecords(r *http.Request, householdID string, lastSync *string) ([]models.Medicine, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if lastSync == nil {
+		rows, err = h.DB.QueryContext(r.Context(),
+			medicineSelectFrom+` WHERE household_id = ?`,
+			householdID,
+		)
+	} else {
+		rows, err = h.DB.QueryContext(r.Context(),
+			medicineSelectFrom+` WHERE household_id = ? AND updated_at > ?`,
+			householdID, *lastSync,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query household records: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
+
+	records := []models.Medicine{}
+	for rows.Next() {
+		var m models.Medicine
+		if err := scanMedicine(rows, &m); err != nil {
+			return nil, err
+		}
+		records = append(records, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate household records: %w", err)
+	}
+	return records, nil
 }

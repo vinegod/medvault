@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
 	"github.com/vinegod/medvault/backend/internal/handlers"
 	"github.com/vinegod/medvault/backend/internal/middleware"
 	"github.com/vinegod/medvault/backend/internal/testutil"
@@ -72,7 +71,7 @@ func newHarness(t *testing.T) *harness {
 //
 // Using a map keeps this helper generic — every test case asserts only the
 // fields it cares about. Bearer is the access token (or "" for unauth).
-func (h *harness) do(method, path, bearer string, body any) (int, map[string]any, map[string]any) {
+func (h *harness) do(method, path, bearer string, body any) (status int, data, errEnv map[string]any) {
 	h.t.Helper()
 	var reader io.Reader
 	if body != nil {
@@ -98,7 +97,7 @@ func (h *harness) do(method, path, bearer string, body any) (int, map[string]any
 	if err != nil {
 		h.t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort drain for test HTTP responses
 
 	raw, _ := io.ReadAll(resp.Body)
 	var env struct {
@@ -201,17 +200,10 @@ func TestInviteFlow_HappyPath(t *testing.T) {
 	if len(members) != 2 {
 		t.Fatalf("members = %d, want 2", len(members))
 	}
-	rolesByUser := map[string]string{}
-	for _, m := range members {
-		mm := m.(map[string]any)
-		rolesByUser[mm["user_id"].(string)] = mm["role"].(string)
-	}
-	if rolesByUser[aliceID] != "owner" {
-		t.Errorf("alice role = %q, want owner", rolesByUser[aliceID])
-	}
-	if rolesByUser[bobID] != "member" {
-		t.Errorf("bob role = %q, want member", rolesByUser[bobID])
-	}
+	assertMemberRoles(t, members, map[string]string{
+		aliceID: "owner",
+		bobID:   "member",
+	})
 }
 
 // TestInviteFlow_RoleGate: only owners can generate invites. A member who
@@ -228,7 +220,12 @@ func TestInviteFlow_RoleGate(t *testing.T) {
 	_, inv, _ := h.do("POST", "/api/households/"+aliceHHID+"/invite", aliceTok, map[string]any{})
 	code := inv["code"].(string)
 
-	if status, _, _ := h.do("POST", "/api/households/join", bobTok, map[string]string{"code": code}); status != http.StatusOK {
+	if status, _, _ := h.do(
+		"POST",
+		"/api/households/join",
+		bobTok,
+		map[string]string{"code": code},
+	); status != http.StatusOK {
 		t.Fatalf("join setup: status=%d", status)
 	}
 
@@ -289,7 +286,12 @@ func TestInviteFlow_CodeReuse(t *testing.T) {
 	_, inv, _ := h.do("POST", "/api/households/"+currentA["id"].(string)+"/invite", aliceTok, map[string]any{})
 	code := inv["code"].(string)
 
-	if status, _, _ := h.do("POST", "/api/households/join", bobTok, map[string]string{"code": code}); status != http.StatusOK {
+	if status, _, _ := h.do(
+		"POST",
+		"/api/households/join",
+		bobTok,
+		map[string]string{"code": code},
+	); status != http.StatusOK {
 		t.Fatalf("first join: status=%d", status)
 	}
 
@@ -390,15 +392,29 @@ func TestInviteFlow_AuthRequired(t *testing.T) {
 
 // --- helpers ---------------------------------------------------------------
 
+func assertMemberRoles(t *testing.T, members []any, want map[string]string) {
+	t.Helper()
+	got := map[string]string{}
+	for _, m := range members {
+		mm := m.(map[string]any)
+		got[mm["user_id"].(string)] = mm["role"].(string)
+	}
+	for userID, wantRole := range want {
+		if got[userID] != wantRole {
+			t.Errorf("user %s role = %q, want %q", userID, got[userID], wantRole)
+		}
+	}
+}
+
 func listMedicines(t *testing.T, h *harness, bearer string) []map[string]any {
 	t.Helper()
-	req, _ := http.NewRequest("GET", h.server.URL+"/api/medicines", nil)
+	req, _ := http.NewRequest("GET", h.server.URL+"/api/medicines", http.NoBody)
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("list medicines: %v", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort drain for test HTTP responses
 
 	var env struct {
 		Data []map[string]any `json:"data"`
@@ -411,4 +427,3 @@ func listMedicines(t *testing.T, h *harness, bearer string) []map[string]any {
 	}
 	return env.Data
 }
-

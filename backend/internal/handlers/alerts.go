@@ -24,9 +24,9 @@ type alertsResponse struct {
 }
 
 type alertsSummary struct {
-	Expired               int `json:"expired"`
-	ExpiringWithin30Days  int `json:"expiring_within_30_days"`
-	ExpiringWithin90Days  int `json:"expiring_within_90_days"`
+	Expired              int `json:"expired"`
+	ExpiringWithin30Days int `json:"expiring_within_30_days"`
+	ExpiringWithin90Days int `json:"expiring_within_90_days"`
 }
 
 // Alerts handles GET /api/alerts.
@@ -50,7 +50,7 @@ func (h *AlertsHandler) Alerts(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
 
 	resp := alertsResponse{
 		Expired:      []models.Medicine{},

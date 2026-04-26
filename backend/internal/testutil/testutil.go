@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/vinegod/medvault/backend/internal/auth"
 	"github.com/vinegod/medvault/backend/internal/database"
 	"github.com/vinegod/medvault/backend/internal/models"
@@ -41,7 +40,7 @@ func NewDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	if err := database.Migrate(db, migrationsDir()); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -87,7 +86,7 @@ func makeUserAt(t *testing.T, db *sql.DB, username string, joinedAt time.Time) U
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
 
 	if _, err := tx.Exec(
 		`INSERT INTO users (id, username, password_hash, created_at, updated_at)
