@@ -1,0 +1,183 @@
+{
+  "nav": {
+    "medicines": "Medicines",
+    "alerts": "Alerts",
+    "settings": "Settings"
+  },
+  "header": {
+    "medicines": "Medicines",
+    "add_medicine": "Add Medicine",
+    "edit_medicine": "Edit Medicine",
+    "alerts": "Alerts",
+    "settings": "Settings",
+    "household": "Household",
+    "join_household": "Join Household",
+    "fallback": "MedVault",
+    "go_back": "Go back"
+  },
+  "sync": {
+    "synced": "Synced",
+    "connecting": "Connecting…",
+    "reconnect": "Reconnect",
+    "local": "Local"
+  },
+  "search": {
+    "placeholder": "Search…",
+    "medicines_placeholder": "Search medicines…",
+    "clear": "Clear search"
+  },
+  "common": {
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "add": "Add",
+    "remove": "Remove",
+    "export": "Export",
+    "import": "Import",
+    "log_in": "Log in",
+    "register": "Register",
+    "disconnect": "Disconnect",
+    "install": "Install"
+  },
+  "medicine_card": {
+    "edit": "Edit {{name}}",
+    "delete": "Delete {{name}}",
+    "not_synced": "Not yet synced",
+    "decrement": "Decrement quantity",
+    "increment": "Increment quantity",
+    "expired_ago": "Expired {{days}}d ago",
+    "expires_today": "Expires today",
+    "expires_in": "Expires in {{days}}d",
+    "expires_on": "Expires {{date}}"
+  },
+  "medicines": {
+    "loading": "Loading…",
+    "empty_title": "No medicines yet",
+    "empty_description": "Add your first medicine to start tracking your home pharmacy.",
+    "add_button": "Add medicine",
+    "no_matches_title": "No matches",
+    "no_matches_description": "Nothing found for \"{{search}}\".",
+    "out_of_stock": "Out of stock — consider restocking.",
+    "deleted": "Deleted {{name}}."
+  },
+  "alerts": {
+    "all_clear_title": "All clear",
+    "all_clear_description": "No medicines are expiring in the next 90 days.",
+    "expired": "Expired",
+    "expiring_30": "Expiring within 30 days",
+    "expiring_90": "Expiring within 90 days"
+  },
+  "auth": {
+    "title": "MedVault",
+    "login_subtitle": "Log in to your server",
+    "register_subtitle": "Create your account",
+    "server_url": "Server URL",
+    "username": "Username",
+    "password": "Password",
+    "connecting": "Connecting…",
+    "creating_account": "Creating account…",
+    "no_account": "No account yet?",
+    "create_one": "Create one",
+    "have_account": "Already have an account?",
+    "continue_without": "Continue without server →",
+    "welcome_back": "Welcome back, {{username}}.",
+    "connection_failed": "Connection failed.",
+    "account_created": "Account created!",
+    "registration_failed": "Registration failed.",
+    "username_hint": "3–30 characters: letters, digits, underscore.",
+    "password_hint": "At least 8 characters."
+  },
+  "medicine_form": {
+    "name": "Name",
+    "name_placeholder": "e.g. Ibuprofen 400mg",
+    "quantity": "Quantity",
+    "unit": "Unit",
+    "category": "Category",
+    "category_placeholder": "e.g. painkiller, antibiotic…",
+    "expiration_date": "Expiration date",
+    "storage_location": "Storage location",
+    "storage_placeholder": "e.g. Bathroom cabinet",
+    "barcode": "Barcode",
+    "barcode_placeholder": "Scan or type barcode",
+    "notes": "Notes",
+    "notes_placeholder": "Any additional information…",
+    "name_required": "Name is required.",
+    "quantity_negative": "Quantity cannot be negative.",
+    "save_failed": "Failed to save. Please try again.",
+    "saving": "Saving…",
+    "updated": "Updated {{name}}.",
+    "added": "Added {{name}}."
+  },
+  "settings": {
+    "server_title": "Server",
+    "connected_as": "Connected as",
+    "error_reconnect": "Couldn't reconnect. Log in again to sync your data.",
+    "disconnected_description": "Connect to a MedVault server to sync your medicines and share with your household.",
+    "backup_title": "Backup",
+    "backup_description": "Export all medicines to a JSON file, or restore from a previous export.",
+    "pwa_title": "Install app",
+    "pwa_description": "Add MedVault to your home screen for faster access and a native feel.",
+    "about_title": "About",
+    "about_description": "MedVault — open-source home pharmacy manager.",
+    "exported": "Exported.",
+    "imported_one": "Imported {{count}} medicine.",
+    "imported_other": "Imported {{count}} medicines.",
+    "import_failed": "Couldn't import — make sure it's a valid MedVault export.",
+    "disconnected_toast": "Disconnected. Local copy of server data was cleared.",
+    "disconnect_dialog_title": "Disconnect from server?",
+    "disconnect_dialog_description": "Your local copy of medicines synced from this server will be cleared so they can't be uploaded to a different server later. <strong>Export first</strong> if you want to keep a backup.",
+    "disconnect_confirm": "Disconnect & clear"
+  },
+  "household": {
+    "load_error_title": "Couldn't load household",
+    "load_error_description": "Check your connection in Settings.",
+    "member_count_one": "{{count}} member",
+    "member_count_other": "{{count}} members",
+    "members_title": "Members",
+    "you_badge": "you",
+    "remove": "Remove",
+    "invite_title": "Invite someone",
+    "invite_description": "Generate a one-time code (valid 7 days). Share it however you like.",
+    "new_invite": "New invite code",
+    "tap_to_copy": "Tap to copy",
+    "expires": "expires {{date}}",
+    "join_title": "Join another household",
+    "join_description": "If someone shared an invite code with you, redeem it here.",
+    "enter_code": "Enter invite code",
+    "removed": "Removed {{name}}.",
+    "invite_generated": "Invite code generated.",
+    "copied": "Copied to clipboard.",
+    "copy_failed": "Couldn't copy. Select the code and copy manually.",
+    "remove_confirm_title": "Remove {{name}}?",
+    "remove_confirm_description": "They'll lose access to this household's medicines. They can be re-invited later."
+  },
+  "join_household": {
+    "description": "Enter the 8-character invite code shared by the household owner.",
+    "placeholder": "ABCD1234",
+    "joining": "Joining…",
+    "join_button": "Join household",
+    "success": "Joined household! Loading medicines…",
+    "invalid_code": "Invalid or expired code."
+  },
+  "units": {
+    "tablets": "tablets",
+    "capsules": "capsules",
+    "ml": "ml",
+    "mg": "mg",
+    "g": "g",
+    "pieces": "pcs",
+    "drops": "drops",
+    "sachets": "sachets",
+    "patches": "patches"
+  },
+  "language": {
+    "title": "Language",
+    "en": "English",
+    "uk": "Українська"
+  },
+  "confirm_dialog": {
+    "confirm": "Confirm",
+    "cancel": "Cancel"
+  }
+}
