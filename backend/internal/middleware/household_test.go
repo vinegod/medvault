@@ -142,18 +142,15 @@ func TestRequireHousehold_MissingUserID(t *testing.T) {
 	}
 }
 
-// TestRequireHousehold_PicksMostRecentlyJoined exercises the active-household
-// heuristic: a user with two memberships gets the more recently joined one.
-// This is the contract that lets a freshly-redeemed invite immediately
-// switch the user's active household.
-func TestRequireHousehold_PicksMostRecentlyJoined(t *testing.T) {
+// TestRequireHousehold_HonoursActivePointer: when the user has multiple
+// memberships, the middleware reads users.active_household_id (set by
+// Register / Switch / Join) instead of guessing.
+func TestRequireHousehold_HonoursActivePointer(t *testing.T) {
 	db := testutil.NewDB(t)
 
-	// Alice's personal household: joined long ago.
 	old := time.Now().UTC().Add(-48 * time.Hour)
 	alice := testutil.MakeUserAt(t, db, "alice", old)
 
-	// A second household, joined yesterday — should win.
 	other := uuid.NewString()
 	yesterday := time.Now().UTC().Add(-24 * time.Hour)
 	if _, err := db.Exec(
@@ -165,16 +162,74 @@ func TestRequireHousehold_PicksMostRecentlyJoined(t *testing.T) {
 	}
 	testutil.AddMembership(t, db, alice.ID, other, models.RoleMember, yesterday)
 
+	// Explicitly point Alice at her personal household, even though
+	// "other" was joined more recently. The pointer must win.
+	if _, err := db.Exec(
+		`UPDATE users SET active_household_id = ? WHERE id = ?`,
+		alice.HouseholdID, alice.ID,
+	); err != nil {
+		t.Fatalf("set active: %v", err)
+	}
+
 	rec, got := runWithUserID(t, db, alice.ID)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	if got.householdID != other {
-		t.Errorf("household_id = %q, want most-recently-joined %q (got the older one instead)",
-			got.householdID, other)
+	if got.householdID != alice.HouseholdID {
+		t.Errorf("household_id = %q, want %q (the explicit active pointer)",
+			got.householdID, alice.HouseholdID)
 	}
-	if got.role != models.RoleMember {
-		t.Errorf("role = %q, want %q (role of the active household)", got.role, models.RoleMember)
+	if got.role != models.RoleOwner {
+		t.Errorf("role = %q, want %q", got.role, models.RoleOwner)
+	}
+}
+
+// TestRequireHousehold_FallsBackWhenActiveStale: if the active_household_id
+// pointer references a household the user is no longer a member of (kicked
+// from another device, household deleted), the middleware silently falls
+// back to any remaining membership and persists the choice.
+func TestRequireHousehold_FallsBackWhenActiveStale(t *testing.T) {
+	db := testutil.NewDB(t)
+
+	alice := testutil.MakeUser(t, db, "alice")
+
+	// Point her at a household that doesn't exist (simulates the household
+	// being deleted on another device after she fetched her token).
+	bogus := uuid.NewString()
+	if _, err := db.Exec(
+		`INSERT INTO households (id, name, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		bogus, "Ghost", alice.ID, time.Now(), time.Now(),
+	); err != nil {
+		t.Fatalf("insert bogus: %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE users SET active_household_id = ? WHERE id = ?`,
+		bogus, alice.ID,
+	); err != nil {
+		t.Fatalf("set bogus active: %v", err)
+	}
+	// No membership in `bogus` — pointer is now stale.
+
+	rec, got := runWithUserID(t, db, alice.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if got.householdID != alice.HouseholdID {
+		t.Errorf("fallback household = %q, want %q (alice's personal one)",
+			got.householdID, alice.HouseholdID)
+	}
+
+	// And the pointer must have been persisted to the fallback so the
+	// next request skips the recovery path.
+	var stored sql.NullString
+	if err := db.QueryRow(
+		`SELECT active_household_id FROM users WHERE id = ?`, alice.ID,
+	).Scan(&stored); err != nil {
+		t.Fatalf("read active: %v", err)
+	}
+	if !stored.Valid || stored.String != alice.HouseholdID {
+		t.Errorf("persisted active = %v, want %q", stored, alice.HouseholdID)
 	}
 }

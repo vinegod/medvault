@@ -60,3 +60,21 @@ func (r *RefreshRequest) Validate() error {
 	}
 	return nil
 }
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+func (r *ChangePasswordRequest) Validate() error {
+	if r.CurrentPassword == "" {
+		return errors.New("current_password is required")
+	}
+	if len(r.NewPassword) < 8 {
+		return errors.New("new_password must be at least 8 characters")
+	}
+	if r.CurrentPassword == r.NewPassword {
+		return errors.New("new_password must differ from current password")
+	}
+	return nil
+}

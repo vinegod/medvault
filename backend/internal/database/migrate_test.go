@@ -2,12 +2,31 @@ package database_test
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/vinegod/medvault/backend/internal/database"
 )
+
+// migrationFileCount returns the number of *.sql files in dir, so tests
+// that count schema_migrations rows don't drift each time we add a migration.
+func migrationFileCount(t *testing.T, dir string) int {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read migrations dir: %v", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			n++
+		}
+	}
+	return n
+}
 
 // migrationsDir resolves to backend/migrations from this test file's location.
 func migrationsDir(t *testing.T) string {
@@ -68,8 +87,19 @@ func TestMigrate_FreshInstall(t *testing.T) {
 		t.Error("idx_medicines_user_id should have been dropped by 002")
 	}
 
-	// Both migrations were recorded.
-	for _, ver := range []string{"001_init.sql", "002_households.sql"} {
+	// 003 adds users.active_household_id; 004 adds household_invites.revoked_at.
+	if _, ok := columnSet(t, db, "users")["active_household_id"]; !ok {
+		t.Error("users.active_household_id missing — 003 did not apply")
+	}
+	if _, ok := columnSet(t, db, "household_invites")["revoked_at"]; !ok {
+		t.Error("household_invites.revoked_at missing — 004 did not apply")
+	}
+
+	// Every migration file present on disk was recorded.
+	for _, ver := range []string{
+		"001_init.sql", "002_households.sql",
+		"003_active_household.sql", "004_invite_revocation.sql",
+	} {
 		var n int
 		if err := db.QueryRow(
 			`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, ver,
@@ -99,9 +129,9 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&total); err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	// Two .sql files exist; running migrate twice must still leave exactly 2 rows.
-	if total != 2 {
-		t.Errorf("schema_migrations total = %d, want 2", total)
+	want := migrationFileCount(t, dir)
+	if total != want {
+		t.Errorf("schema_migrations total = %d, want %d (one row per *.sql file)", total, want)
 	}
 }
 

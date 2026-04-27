@@ -10,4 +10,9 @@ const (
 	CodeConflict     = "CONFLICT"
 	CodeRateLimited  = "RATE_LIMITED"
 	CodeInternal     = "INTERNAL"
+
+	// CodeOwnerTransferRequired is returned when an owner tries to leave a
+	// household that still has other members. The client must call the
+	// transfer endpoint to promote another member to owner first.
+	CodeOwnerTransferRequired = "OWNER_TRANSFER_REQUIRED"
 )

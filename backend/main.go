@@ -179,13 +179,16 @@ func buildRouter(db *sql.DB, cfg *config) http.Handler {
 		r.With(syncLimit.Middleware, middleware.RequireHousehold(db)).
 			Post("/api/sync", syncH.Sync)
 
+		// Password change: per-user, no household middleware.
+		r.With(apiLimit.Middleware).Post("/api/auth/password", authH.ChangePassword)
+
 		// Settings: per-user, NO household middleware.
 		r.With(apiLimit.Middleware).Route("/api/settings", func(r chi.Router) {
 			r.Get("/", setH.GetSettings)
 			r.Put("/", setH.UpdateSettings)
 		})
 
-		// Everything else: standard rate limit + household scoping.
+		// Medicines + alerts: standard rate limit + household scoping.
 		r.Group(func(r chi.Router) {
 			r.Use(apiLimit.Middleware)
 			r.Use(middleware.RequireHousehold(db))
@@ -199,11 +202,27 @@ func buildRouter(db *sql.DB, cfg *config) http.Handler {
 				r.Put("/{id}", medH.Update)
 				r.Delete("/{id}", medH.Delete)
 			})
+		})
 
-			r.Route("/api/households", func(r chi.Router) {
+		// All household routes in one block. The three membership-management
+		// routes (List, Create, Switch) intentionally skip RequireHousehold
+		// so a user who just lost their only household can still recover.
+		r.Route("/api/households", func(r chi.Router) {
+			r.With(apiLimit.Middleware).Get("/", hhH.List)
+			r.With(apiLimit.Middleware).Post("/", hhH.Create)
+			r.With(apiLimit.Middleware).Post("/switch", hhH.Switch)
+
+			r.Group(func(r chi.Router) {
+				r.Use(apiLimit.Middleware)
+				r.Use(middleware.RequireHousehold(db))
 				r.Get("/current", hhH.GetCurrent)
 				r.Post("/join", hhH.Join)
+				r.Patch("/{id}", hhH.Rename)
+				r.Delete("/{id}/membership", hhH.Leave)
+				r.Post("/{id}/transfer", hhH.Transfer)
 				r.Post("/{id}/invite", hhH.CreateInvite)
+				r.Get("/{id}/invites", hhH.ListInvites)
+				r.Delete("/{id}/invites/{code}", hhH.RevokeInvite)
 				r.Delete("/{id}/members/{user_id}", hhH.RemoveMember)
 			})
 		})

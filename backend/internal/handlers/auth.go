@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/vinegod/medvault/backend/internal/api"
 	"github.com/vinegod/medvault/backend/internal/auth"
+	"github.com/vinegod/medvault/backend/internal/middleware"
 	"github.com/vinegod/medvault/backend/internal/models"
 )
 
@@ -111,6 +112,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		userID, householdID, models.RoleOwner, now,
 	); err != nil {
 		slog.Error("register: insert membership", "err", err)
+		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		return
+	}
+
+	if _, err = tx.ExecContext(r.Context(),
+		`UPDATE users SET active_household_id = ? WHERE id = ?`,
+		householdID, userID,
+	); err != nil {
+		slog.Error("register: set active household", "err", err)
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
@@ -265,6 +275,90 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.WriteJSON(w, http.StatusOK, nil)
+}
+
+// ChangePassword verifies the caller's current password, replaces it with the
+// new one, revokes all existing refresh tokens (forcing re-login on other
+// devices), and returns a fresh token pair so the current session stays active.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFrom(r.Context())
+	username := middleware.UsernameFrom(r.Context())
+
+	var req models.ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "invalid JSON")
+		return
+	}
+	if err := req.Validate(); err != nil {
+		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, err.Error())
+		return
+	}
+
+	var currentHash string
+	var createdAt time.Time
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT password_hash, created_at FROM users WHERE id = ?`, userID,
+	).Scan(&currentHash, &createdAt); err != nil {
+		slog.Error("changePassword: query user", "err", err)
+		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		return
+	}
+
+	if !auth.CheckPassword(req.CurrentPassword, currentHash) {
+		api.WriteError(w, http.StatusUnauthorized, models.CodeUnauthorized, "current password is incorrect")
+		return
+	}
+
+	newHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		slog.Error("changePassword: hash password", "err", err)
+		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		return
+	}
+
+	now := time.Now().UTC()
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		slog.Error("changePassword: begin tx", "err", err)
+		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck // superseded by Commit on success
+
+	if _, err = tx.ExecContext(r.Context(),
+		`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`,
+		newHash, now, userID,
+	); err != nil {
+		slog.Error("changePassword: update hash", "err", err)
+		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		return
+	}
+
+	// Revoke all existing refresh tokens so other devices are forced to re-login.
+	if _, err = tx.ExecContext(r.Context(),
+		`UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`,
+		now, userID,
+	); err != nil {
+		slog.Error("changePassword: revoke tokens", "err", err)
+		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		slog.Error("changePassword: commit", "err", err)
+		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		return
+	}
+
+	// Issue a fresh pair so the caller stays logged in on this device.
+	resp, ok := h.issueTokens(w, r, userID, username, createdAt)
+	if !ok {
+		return
+	}
+	api.WriteJSON(w, http.StatusOK, tokenResponse{
+		AccessToken:  resp.AccessToken,
+		RefreshToken: resp.RefreshToken,
+	})
 }
 
 // issueTokens generates and stores a fresh access+refresh pair.

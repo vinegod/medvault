@@ -61,3 +61,70 @@ func (r *JoinRequest) Validate() error {
 	}
 	return nil
 }
+
+// MembershipSummary is one row of the GET /api/households response —
+// just enough for the frontend to render the switcher list.
+type MembershipSummary struct {
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+	IsActive bool      `json:"is_active"`
+}
+
+type SwitchHouseholdRequest struct {
+	HouseholdID string `json:"household_id"`
+}
+
+func (r *SwitchHouseholdRequest) Validate() error {
+	r.HouseholdID = strings.TrimSpace(r.HouseholdID)
+	if r.HouseholdID == "" {
+		return errors.New("household_id is required")
+	}
+	return nil
+}
+
+type RenameHouseholdRequest struct {
+	Name string `json:"name"`
+}
+
+// Validate trims the name and enforces 1..80 chars. The upper bound keeps
+// the household name displayable in the header switcher without truncation
+// games on small screens.
+func (r *RenameHouseholdRequest) Validate() error {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return errors.New("name is required")
+	}
+	if len(r.Name) > 80 {
+		return errors.New("name must be 80 characters or fewer")
+	}
+	return nil
+}
+
+type TransferOwnershipRequest struct {
+	ToUserID string `json:"to_user_id"`
+}
+
+func (r *TransferOwnershipRequest) Validate() error {
+	r.ToUserID = strings.TrimSpace(r.ToUserID)
+	if r.ToUserID == "" {
+		return errors.New("to_user_id is required")
+	}
+	return nil
+}
+
+type CreateHouseholdRequest struct {
+	Name string `json:"name"`
+}
+
+func (r *CreateHouseholdRequest) Validate() error {
+	r.Name = strings.TrimSpace(r.Name)
+	if r.Name == "" {
+		return errors.New("name is required")
+	}
+	if len(r.Name) > 80 {
+		return errors.New("name must be 80 characters or fewer")
+	}
+	return nil
+}
