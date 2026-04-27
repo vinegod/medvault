@@ -1,22 +1,69 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import i18n from "../i18n";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
-import { exportAll, importData } from "../services/db";
+import { exportAll, importData, getMeta, setMeta } from "../services/db";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
+import { useTheme, type Theme } from "../hooks/useTheme";
+import { apiClient } from "../services/api";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+
+const DEFAULT_THRESHOLD = 3;
 
 export default function Settings() {
   const { status, user, serverUrl, disconnect } = useAuth();
   const toast = useToast();
   const { t } = useTranslation();
   const { canInstall, install } = useInstallPrompt();
+  const { theme, setTheme } = useTheme();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
   const isConnected = status === "connected";
+
+  useEffect(() => {
+    getMeta("low_stock_threshold").then((v) => {
+      const n = v ? Number.parseInt(v, 10) : DEFAULT_THRESHOLD;
+      if (!Number.isNaN(n)) setThreshold(n);
+    });
+  }, []);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwBusy(true);
+    try {
+      const res = await apiClient.post<{ access_token: string; refresh_token: string }>(
+        "/api/auth/password",
+        { current_password: pwCurrent, new_password: pwNew }
+      );
+      if (res.error) {
+        toast.error(res.error.message ?? t("settings.password_failed"));
+        return;
+      }
+      if (res.data) {
+        apiClient.setAccessToken(res.data.access_token);
+        await setMeta("access_token", res.data.access_token);
+        await setMeta("refresh_token", res.data.refresh_token);
+      }
+      toast.success(t("settings.password_changed"));
+      setPwCurrent("");
+      setPwNew("");
+    } finally {
+      setPwBusy(false);
+    }
+  }
+
+  async function handleThresholdChange(value: number) {
+    const clamped = Math.max(1, Math.min(99, value));
+    setThreshold(clamped);
+    await setMeta("low_stock_threshold", String(clamped));
+  }
 
   async function handleExport() {
     const json = await exportAll();
@@ -117,6 +164,43 @@ export default function Settings() {
         )}
       </section>
 
+      {isConnected && (
+        <section style={card}>
+          <h3 style={{ ...cardTitle, marginBottom: "0.75rem" }}>{t("settings.password_title")}</h3>
+          <form
+            onSubmit={handleChangePassword}
+            style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}
+          >
+            <input
+              type="password"
+              placeholder={t("settings.password_current")}
+              value={pwCurrent}
+              onChange={(e) => setPwCurrent(e.target.value)}
+              autoComplete="current-password"
+              style={inputStyle}
+              required
+            />
+            <input
+              type="password"
+              placeholder={t("settings.password_new")}
+              value={pwNew}
+              onChange={(e) => setPwNew(e.target.value)}
+              autoComplete="new-password"
+              style={inputStyle}
+              required
+              minLength={8}
+            />
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={pwBusy || !pwCurrent || pwNew.length < 8}
+            >
+              {pwBusy ? t("settings.password_saving") : t("settings.password_save")}
+            </Button>
+          </form>
+        </section>
+      )}
+
       <section style={card}>
         <h3 style={cardTitle}>{t("settings.backup_title")}</h3>
         <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem", marginBottom: "1rem" }}>
@@ -149,6 +233,56 @@ export default function Settings() {
           </Button>
         </section>
       )}
+
+      <section style={card}>
+        <h3 style={{ ...cardTitle, marginBottom: "0.75rem" }}>{t("settings.appearance_title")}</h3>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {(["system", "light", "dark"] as Theme[]).map((t_) => (
+            <button
+              key={t_}
+              onClick={() => setTheme(t_)}
+              style={{
+                ...langBtn,
+                background: theme === t_ ? "var(--color-accent)" : "var(--color-surface-2)",
+                color: theme === t_ ? "#fff" : "var(--color-text)",
+                borderColor: theme === t_ ? "var(--color-accent)" : "var(--color-border)",
+              }}
+            >
+              {t(`settings.theme_${t_}`)}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section style={card}>
+        <h3 style={{ ...cardTitle, marginBottom: "0.25rem" }}>{t("settings.threshold_title")}</h3>
+        <p
+          style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", marginBottom: "0.75rem" }}
+        >
+          {t("settings.threshold_description")}
+        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button
+            onClick={() => handleThresholdChange(threshold - 1)}
+            disabled={threshold <= 1}
+            style={{ ...threshBtn, opacity: threshold <= 1 ? 0.35 : 1 }}
+            aria-label="-"
+          >
+            <Icon name="minus" size={16} />
+          </button>
+          <span style={{ fontWeight: 700, fontSize: "1.1rem", minWidth: 28, textAlign: "center" }}>
+            {threshold}
+          </span>
+          <button
+            onClick={() => handleThresholdChange(threshold + 1)}
+            disabled={threshold >= 99}
+            style={{ ...threshBtn, opacity: threshold >= 99 ? 0.35 : 1 }}
+            aria-label="+"
+          >
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
+      </section>
 
       <section style={card}>
         <h3 style={cardTitle}>{t("language.title")}</h3>
@@ -227,4 +361,24 @@ const importBtn: React.CSSProperties = {
   fontWeight: 600,
   minHeight: 44,
   cursor: "pointer",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  background: "var(--color-surface-2)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius)",
+  padding: "0.625rem 0.75rem",
+  color: "var(--color-text)",
+};
+
+const threshBtn: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  borderRadius: "50%",
+  background: "var(--color-surface-2)",
+  border: "1px solid var(--color-border)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 };

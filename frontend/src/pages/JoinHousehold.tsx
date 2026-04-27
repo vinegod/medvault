@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { apiClient } from "../services/api";
-import { db, deleteMeta } from "../services/db";
-import { performSync } from "../services/sync";
+import { rebuildLocalCacheFromServer } from "../services/sync";
+import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { Button } from "../components/Button";
 
@@ -11,7 +11,12 @@ export default function JoinHousehold() {
   const navigate = useNavigate();
   const toast = useToast();
   const { t } = useTranslation();
-  const [code, setCode] = useState("");
+  const { refreshHouseholds } = useAuth();
+  const [params] = useSearchParams();
+
+  // Initialise from ?code= so a QR-code scan lands on a pre-filled form
+  // and the user can submit immediately.
+  const [code, setCode] = useState(() => (params.get("code") ?? "").toUpperCase().slice(0, 8));
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -23,10 +28,8 @@ export default function JoinHousehold() {
     });
 
     if (res.data) {
-      await db.medicines.clear();
-      await deleteMeta("last_sync");
-      await performSync();
-
+      await rebuildLocalCacheFromServer();
+      await refreshHouseholds();
       setLoading(false);
       toast.success(t("join_household.success"));
       navigate("/household");

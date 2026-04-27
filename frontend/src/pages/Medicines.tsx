@@ -1,26 +1,57 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useTranslation } from "react-i18next";
 import Fuse from "fuse.js";
-import { db, deleteMedicine, adjustQuantity } from "../services/db";
+import {
+  db,
+  deleteMedicine,
+  restoreMedicine,
+  adjustQuantity,
+  getMeta,
+  setMeta,
+} from "../services/db";
 import { MedicineCard } from "../components/MedicineCard";
 import { SearchBar } from "../components/SearchBar";
+import { SortBar, type SortKey, isSortKey } from "../components/SortBar";
 import { EmptyState } from "../components/EmptyState";
 import { FAB } from "../components/FAB";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { useToast } from "../contexts/ToastContext";
 import { Link } from "react-router-dom";
+import type { LocalMedicine } from "../types";
+
+const SORT_META_KEY = "medicines_sort";
+const DEFAULT_LOW_STOCK = 3;
 
 export default function Medicines() {
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [lowStockThreshold, setLowStockThreshold] = useState(DEFAULT_LOW_STOCK);
   const toast = useToast();
   const { t } = useTranslation();
 
   const medicines = useLiveQuery(
-    () => db.medicines.filter((m) => m.deleted_at === null).sortBy("name"),
+    () => db.medicines.filter((m) => m.deleted_at === null).toArray(),
     []
   );
+
+  // Persist sort choice — read on mount, write on change. Not reactive
+  // because no other view uses this preference.
+  useEffect(() => {
+    getMeta(SORT_META_KEY).then((v) => {
+      if (v && isSortKey(v)) setSortKey(v);
+    });
+    getMeta("low_stock_threshold").then((v) => {
+      const n = v ? Number.parseInt(v, 10) : DEFAULT_LOW_STOCK;
+      if (!Number.isNaN(n)) setLowStockThreshold(n);
+    });
+  }, []);
+
+  function changeSort(key: SortKey) {
+    setSortKey(key);
+    setMeta(SORT_META_KEY, key);
+  }
 
   const fuse = useMemo(
     () =>
@@ -39,11 +70,13 @@ export default function Medicines() {
     [medicines]
   );
 
+  // When the user types a query, results are ordered by Fuse relevance.
+  // When idle, the chosen sort takes over.
   const filtered = useMemo(() => {
     if (!medicines) return [];
-    if (!search.trim()) return medicines;
-    return fuse!.search(search).map((r) => r.item);
-  }, [fuse, medicines, search]);
+    if (search.trim()) return fuse!.search(search).map((r) => r.item);
+    return [...medicines].sort(comparator(sortKey));
+  }, [fuse, medicines, search, sortKey]);
 
   async function handleAdjust(id: string, delta: number) {
     const newQty = await adjustQuantity(id, delta);
@@ -54,18 +87,28 @@ export default function Medicines() {
 
   async function handleDelete(id: string, name: string) {
     await deleteMedicine(id);
-    toast.success(t("medicines.deleted", { name }));
+    toast.success(t("medicines.deleted", { name }), {
+      actionLabel: t("common.undo"),
+      onAction: () => {
+        restoreMedicine(id);
+      },
+    });
   }
 
   return (
     <>
-      <div style={{ marginBottom: "1rem" }}>
+      <div style={{ marginBottom: "0.75rem" }}>
         <SearchBar
           value={search}
           onChange={setSearch}
           placeholder={t("search.medicines_placeholder")}
         />
       </div>
+      {medicines !== undefined && medicines.length > 1 && !search.trim() && (
+        <div style={{ marginBottom: "0.75rem" }}>
+          <SortBar value={sortKey} onChange={changeSort} />
+        </div>
+      )}
 
       {medicines === undefined && (
         <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginTop: "2rem" }}>
@@ -103,6 +146,7 @@ export default function Medicines() {
             medicine={m}
             onAdjust={(delta) => handleAdjust(m.id, delta)}
             onDelete={() => handleDelete(m.id, m.name)}
+            lowStockThreshold={lowStockThreshold}
           />
         ))}
       </div>
@@ -114,4 +158,27 @@ export default function Medicines() {
       )}
     </>
   );
+}
+
+// comparator returns the sort function for a given SortKey. Pulled out so
+// it's testable and the inline render stays small. Records without an
+// expiration_date are pushed to the bottom of that sort.
+function comparator(key: SortKey): (a: LocalMedicine, b: LocalMedicine) => number {
+  switch (key) {
+    case "name":
+      return (a, b) => a.name.localeCompare(b.name);
+    case "quantity":
+      return (a, b) => a.quantity - b.quantity;
+    case "expiration":
+      return (a, b) => {
+        const da = a.expiration_date ?? "";
+        const db = b.expiration_date ?? "";
+        if (!da && !db) return a.name.localeCompare(b.name);
+        if (!da) return 1;
+        if (!db) return -1;
+        return da.localeCompare(db);
+      };
+    case "recent":
+      return (a, b) => b.updated_at.localeCompare(a.updated_at);
+  }
 }

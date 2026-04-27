@@ -7,13 +7,23 @@ interface Toast {
   id: number;
   type: ToastType;
   message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
+// Optional action shown as a button on the right of a toast. Used by
+// Medicines.tsx to offer "Undo" right after a delete.
+interface ToastOptions {
+  ms?: number;
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 interface ToastContextValue {
-  show: (type: ToastType, message: string, ms?: number) => void;
-  success: (message: string) => void;
-  error: (message: string) => void;
-  info: (message: string) => void;
+  show: (type: ToastType, message: string, opts?: ToastOptions) => void;
+  success: (message: string, opts?: ToastOptions) => void;
+  error: (message: string, opts?: ToastOptions) => void;
+  info: (message: string, opts?: ToastOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -28,9 +38,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const show = useCallback(
-    (type: ToastType, message: string, ms = 3000) => {
+    (type: ToastType, message: string, opts: ToastOptions = {}) => {
       const id = ++nextId;
-      setToasts((t) => [...t, { id, type, message }]);
+      const ms = opts.ms ?? (type === "error" ? 5000 : 3000);
+      setToasts((t) => [
+        ...t,
+        { id, type, message, actionLabel: opts.actionLabel, onAction: opts.onAction },
+      ]);
       setTimeout(() => dismiss(id), ms);
     },
     [dismiss]
@@ -38,24 +52,36 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const value: ToastContextValue = {
     show,
-    success: (m) => show("success", m),
-    error: (m) => show("error", m, 5000),
-    info: (m) => show("info", m),
+    success: (m, o) => show("success", m, o),
+    error: (m, o) => show("error", m, o),
+    info: (m, o) => show("info", m, o),
   };
+
+  function handleAction(toast: Toast) {
+    toast.onAction?.();
+    dismiss(toast.id);
+  }
 
   return (
     <ToastContext.Provider value={value}>
       {children}
       <div style={container} aria-live="polite" aria-atomic="true">
         {toasts.map((t) => (
-          <button
-            key={t.id}
-            style={{ ...toast, ...toastStyles[t.type] }}
-            onClick={() => dismiss(t.id)}
-          >
-            <Icon name={iconFor(t.type)} size={18} />
-            <span>{t.message}</span>
-          </button>
+          <div key={t.id} style={{ ...toastBox, ...toastStyles[t.type] }}>
+            <button
+              style={toastBody}
+              onClick={() => dismiss(t.id)}
+              aria-label="Dismiss notification"
+            >
+              <Icon name={iconFor(t.type)} size={18} />
+              <span>{t.message}</span>
+            </button>
+            {t.actionLabel && t.onAction && (
+              <button style={actionBtn} onClick={() => handleAction(t)}>
+                {t.actionLabel}
+              </button>
+            )}
+          </div>
         ))}
       </div>
     </ToastContext.Provider>
@@ -87,20 +113,45 @@ const container: React.CSSProperties = {
   width: "min(calc(100% - 32px), 360px)",
 };
 
-const toast: React.CSSProperties = {
+const toastBox: React.CSSProperties = {
   display: "flex",
-  alignItems: "center",
-  gap: "0.6rem",
-  padding: "0.75rem 1rem",
+  alignItems: "stretch",
+  gap: "0",
   borderRadius: "var(--radius)",
   fontSize: "0.9rem",
   border: "1px solid",
   pointerEvents: "auto",
-  cursor: "pointer",
-  textAlign: "left",
   width: "100%",
   boxShadow: "0 8px 24px rgba(0,0,0,.4)",
   animation: "toast-in 180ms ease-out",
+  overflow: "hidden",
+};
+
+const toastBody: React.CSSProperties = {
+  flex: 1,
+  display: "flex",
+  alignItems: "center",
+  gap: "0.6rem",
+  padding: "0.75rem 1rem",
+  background: "transparent",
+  border: "none",
+  color: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
+  font: "inherit",
+};
+
+const actionBtn: React.CSSProperties = {
+  padding: "0 1rem",
+  background: "rgba(255, 255, 255, 0.1)",
+  border: "none",
+  borderLeft: "1px solid rgba(255, 255, 255, 0.15)",
+  color: "inherit",
+  fontWeight: 600,
+  cursor: "pointer",
+  fontSize: "0.85rem",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
 };
 
 const toastStyles: Record<ToastType, React.CSSProperties> = {

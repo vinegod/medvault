@@ -85,6 +85,19 @@ export async function deleteMedicine(id: string): Promise<void> {
   });
 }
 
+// restoreMedicine clears the soft-delete flag — used by the toast "Undo"
+// action right after a delete. Bumps updated_at so the un-delete propagates
+// to the server on the next sync.
+export async function restoreMedicine(id: string): Promise<void> {
+  const now = new Date().toISOString();
+  const isServerConnected = await getMeta("server_url");
+  await db.medicines.update(id, {
+    deleted_at: null,
+    updated_at: now,
+    sync_status: isServerConnected ? "pending" : "local",
+  });
+}
+
 // ── Queries ───────────────────────────────────────────────────
 
 export async function getActiveMedicines(): Promise<LocalMedicine[]> {
@@ -114,6 +127,28 @@ export async function getExpiredMedicines(): Promise<LocalMedicine[]> {
       (m) => m.deleted_at === null && m.expiration_date !== null && m.expiration_date < todayStr
     )
     .sortBy("expiration_date");
+}
+
+// getLowStockMedicines returns active medicines at or below the threshold
+// (0 included). Sorted ascending so the most-empty appears first.
+export async function getLowStockMedicines(threshold: number): Promise<LocalMedicine[]> {
+  const list = await db.medicines
+    .filter((m) => m.deleted_at === null && m.quantity <= threshold)
+    .toArray();
+  return list.sort((a, b) => a.quantity - b.quantity);
+}
+
+// getDistinctCategories returns sorted unique non-empty category strings —
+// used by the form's <datalist> so users see existing categories as
+// suggestions instead of accidentally creating "Vitamin" / "vitamins".
+export async function getDistinctCategories(): Promise<string[]> {
+  const list = await db.medicines.filter((m) => m.deleted_at === null).toArray();
+  const set = new Set<string>();
+  for (const m of list) {
+    const c = m.category?.trim();
+    if (c) set.add(c);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
 // ── Sync helpers (used by sync.ts when server is connected) ───

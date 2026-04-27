@@ -13,6 +13,8 @@ import Alerts from "./pages/Alerts";
 import Settings from "./pages/Settings";
 import Household from "./pages/Household";
 import JoinHousehold from "./pages/JoinHousehold";
+import CreateHousehold from "./pages/CreateHousehold";
+import OnboardingHousehold from "./pages/OnboardingHousehold";
 
 // Server-only routes redirect to /settings if no server is connected.
 function ConnectedOnly() {
@@ -53,7 +55,9 @@ function AppRoutes() {
 
         <Route element={<ConnectedOnly />}>
           <Route path="/household" element={<Household />} />
+          <Route path="/household/new" element={<CreateHousehold />} />
           <Route path="/household/join" element={<JoinHousehold />} />
+          <Route path="/onboarding/household" element={<OnboardingHousehold />} />
         </Route>
       </Route>
 

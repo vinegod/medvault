@@ -121,12 +121,15 @@ export interface MemberView {
   joined_at: string;
 }
 
-export interface HouseholdDetail {
+export interface Household {
   id: string;
   name: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface HouseholdDetail extends Household {
   members: MemberView[];
 }
 
@@ -135,6 +138,16 @@ export interface Invite {
   household_id: string;
   invited_by: string;
   expires_at: string;
+  created_at?: string;
+}
+
+// One row of GET /api/households — used by the switcher and Household page.
+export interface MembershipSummary {
+  id: string;
+  name: string;
+  role: "owner" | "member";
+  joined_at: string;
+  is_active: boolean;
 }
 
 // Export/Import format (for manual JSON backup)

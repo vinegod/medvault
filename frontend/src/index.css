@@ -6,8 +6,9 @@
   padding: 0;
 }
 
-:root {
-  /* Color tokens */
+:root,
+[data-theme="dark"] {
+  /* Color tokens — dark theme (default) */
   --color-bg: #1a1a2e;
   --color-surface: #1f2541;
   --color-surface-2: #262d50;
@@ -34,6 +35,21 @@
 
   font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --color-bg: #f7f7fb;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef0f5;
+  --color-border: #d8dce4;
+  --color-accent: #e94560;
+  --color-accent-hover: #c73652;
+  --color-text: #1a1d23;
+  --color-text-muted: #5b6069;
+  --color-success: #2e9e60;
+  --color-warning: #d4870a;
+  --color-error: #cc2a44;
+  color-scheme: light;
 }
 
 html,

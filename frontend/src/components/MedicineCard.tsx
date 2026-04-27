@@ -1,18 +1,43 @@
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Icon } from "./Icon";
+import { updateMedicine } from "../services/db";
 import type { LocalMedicine } from "../types";
 
 interface Props {
   medicine: LocalMedicine;
   onAdjust: (delta: number) => void;
   onDelete: () => void;
+  lowStockThreshold?: number;
 }
 
-export function MedicineCard({ medicine: m, onAdjust, onDelete }: Props) {
+export function MedicineCard({ medicine: m, onAdjust, onDelete, lowStockThreshold = 3 }: Props) {
   const { t, i18n } = useTranslation();
-  const lowStock = m.quantity > 0 && m.quantity <= 3;
+  const lowStock = m.quantity > 0 && m.quantity <= lowStockThreshold;
   const outOfStock = m.quantity === 0;
+
+  // Inline-edit state for the quantity number. Tap the number → input;
+  // Enter or blur commits, Escape cancels. Keeps the +/- buttons for
+  // small changes while letting users type 30 directly when refilling.
+  const [editingQty, setEditingQty] = useState(false);
+  const [qtyDraft, setQtyDraft] = useState(String(m.quantity));
+  const qtyInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (editingQty) qtyInputRef.current?.select();
+  }, [editingQty]);
+
+  function startEditQty() {
+    setQtyDraft(String(m.quantity));
+    setEditingQty(true);
+  }
+
+  function commitQty() {
+    const parsed = Math.max(0, Math.min(99999, Number.parseInt(qtyDraft, 10) || 0));
+    setEditingQty(false);
+    if (parsed !== m.quantity) updateMedicine(m.id, { quantity: parsed });
+  }
 
   const exp = (() => {
     if (!m.expiration_date) return null;
@@ -80,7 +105,32 @@ export function MedicineCard({ medicine: m, onAdjust, onDelete }: Props) {
                   : "var(--color-text)",
             }}
           >
-            <span style={{ fontSize: "1.1rem", fontWeight: 700 }}>{m.quantity}</span>
+            {editingQty ? (
+              <input
+                ref={qtyInputRef}
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={99999}
+                value={qtyDraft}
+                onChange={(e) => setQtyDraft(e.target.value)}
+                onBlur={commitQty}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitQty();
+                  if (e.key === "Escape") setEditingQty(false);
+                }}
+                style={qtyInput}
+                aria-label={t("medicine_card.set_quantity")}
+              />
+            ) : (
+              <button
+                onClick={startEditQty}
+                style={qtyValueBtn}
+                aria-label={t("medicine_card.set_quantity")}
+              >
+                {m.quantity}
+              </button>
+            )}
             <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
               {t(`units.${m.unit}`)}
             </span>
@@ -174,6 +224,27 @@ const qtyDisplay: React.CSSProperties = {
   alignItems: "center",
   minWidth: 56,
   lineHeight: 1.1,
+};
+const qtyValueBtn: React.CSSProperties = {
+  fontSize: "1.1rem",
+  fontWeight: 700,
+  color: "inherit",
+  background: "transparent",
+  border: "none",
+  padding: "0 0.25rem",
+  cursor: "pointer",
+};
+const qtyInput: React.CSSProperties = {
+  width: 64,
+  fontSize: "1.05rem",
+  fontWeight: 700,
+  textAlign: "center",
+  color: "inherit",
+  background: "var(--color-bg)",
+  border: "1px solid var(--color-accent)",
+  borderRadius: "var(--radius)",
+  padding: "0.1rem 0.25rem",
+  outline: "none",
 };
 const deleteBtn: React.CSSProperties = {
   width: 36,

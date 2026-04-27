@@ -1,6 +1,15 @@
-import { db, getMeta, setMeta, getPendingChanges } from "./db";
+import { db, getMeta, setMeta, deleteMeta, getPendingChanges } from "./db";
 import { apiClient } from "./api";
 import type { Medicine, SyncResponse } from "../types";
+
+// rebuildLocalCacheFromServer wipes the local medicine cache and forces a
+// full re-sync. Used by Join and Switch household flows — both swap the
+// server-side scope (household_id) and the cache becomes meaningless.
+export async function rebuildLocalCacheFromServer(): Promise<void> {
+  await db.medicines.clear();
+  await deleteMeta("last_sync");
+  await performSync();
+}
 
 let syncInProgress = false;
 let syncTimer: ReturnType<typeof setInterval> | null = null;

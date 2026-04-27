@@ -23,7 +23,7 @@ export default function Register() {
     setLoading(false);
     if (result.success) {
       toast.success(t("auth.account_created"));
-      navigate("/medicines");
+      navigate("/onboarding/household");
     } else {
       toast.error(result.error ?? t("auth.registration_failed"));
     }

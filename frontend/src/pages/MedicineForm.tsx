@@ -1,7 +1,12 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useId, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { addMedicine, updateMedicine, getMedicineById } from "../services/db";
+import {
+  addMedicine,
+  updateMedicine,
+  getMedicineById,
+  getDistinctCategories,
+} from "../services/db";
 import { Button } from "../components/Button";
 import { useToast } from "../contexts/ToastContext";
 import type { MedicineInput, MedicineUnit } from "../types";
@@ -39,6 +44,12 @@ export default function MedicineForm() {
   const [fields, setFields] = useState<MedicineInput>(EMPTY);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [categorySuggestions, setCategorySuggestions] = useState<string[]>([]);
+  const categoryListId = useId();
+
+  useEffect(() => {
+    getDistinctCategories().then(setCategorySuggestions);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -145,7 +156,14 @@ export default function MedicineForm() {
           onChange={(e) => set("category", e.target.value)}
           placeholder={t("medicine_form.category_placeholder")}
           maxLength={50}
+          list={categoryListId}
+          autoComplete="off"
         />
+        <datalist id={categoryListId}>
+          {categorySuggestions.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
       </Field>
 
       <Field label={t("medicine_form.expiration_date")}>

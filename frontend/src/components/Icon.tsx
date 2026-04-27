@@ -24,7 +24,9 @@ export type IconName =
   | "upload"
   | "warning"
   | "wifi"
-  | "wifi-off";
+  | "wifi-off"
+  | "chevron-down"
+  | "home";
 
 const paths: Record<IconName, JSX.Element> = {
   pill: (
@@ -121,6 +123,13 @@ const paths: Record<IconName, JSX.Element> = {
       <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88" />
       <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
       <path d="M12 20h.01" />
+    </>
+  ),
+  "chevron-down": <path d="m6 9 6 6 6-6" />,
+  home: (
+    <>
+      <path d="m3 11 9-8 9 8" />
+      <path d="M5 10v10a1 1 0 0 0 1 1h4v-7h4v7h4a1 1 0 0 0 1-1V10" />
     </>
   ),
 };
