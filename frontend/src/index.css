@@ -13,13 +13,19 @@
   --color-surface: #1f2541;
   --color-surface-2: #262d50;
   --color-border: #2c3463;
-  --color-accent: #e94560;
-  --color-accent-hover: #c73652;
+  /* Primary = active state, primary CTA, FAB. Destructive = delete, disconnect, error. */
+  --color-primary: #e94560;
+  --color-primary-hover: #c73652;
+  --color-destructive: #d63351;
+  --color-destructive-hover: #b8253f;
+  /* Aliases — kept so any inline-style miss in the sweep still renders. Drop in a follow-up. */
+  --color-accent: var(--color-primary);
+  --color-accent-hover: var(--color-primary-hover);
   --color-text: #e8e8f0;
   --color-text-muted: #8e94b8;
   --color-success: #4caf7d;
   --color-warning: #f5a623;
-  --color-error: #e94560;
+  --color-error: var(--color-destructive);
 
   /* Layout tokens */
   --radius: 10px;
@@ -42,13 +48,17 @@
   --color-surface: #ffffff;
   --color-surface-2: #eef0f5;
   --color-border: #d8dce4;
-  --color-accent: #e94560;
-  --color-accent-hover: #c73652;
+  --color-primary: #e94560;
+  --color-primary-hover: #c73652;
+  --color-destructive: #cc2a44;
+  --color-destructive-hover: #a82038;
+  --color-accent: var(--color-primary);
+  --color-accent-hover: var(--color-primary-hover);
   --color-text: #1a1d23;
   --color-text-muted: #5b6069;
   --color-success: #2e9e60;
   --color-warning: #d4870a;
-  --color-error: #cc2a44;
+  --color-error: var(--color-destructive);
   color-scheme: light;
 }
 
@@ -72,7 +82,7 @@ body {
 }
 
 a {
-  color: var(--color-accent);
+  color: var(--color-primary);
   text-decoration: none;
 }
 a:hover {
@@ -92,7 +102,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
@@ -127,4 +137,52 @@ h3 {
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 3px;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Page container — set on the <main> in Layout. Phone defaults to a
+   narrow column so single-column lists feel intentional; widens on
+   desktop so multi-column grids have room to breathe. */
+.app-container {
+  max-width: 700px;
+}
+@media (min-width: 900px) {
+  .app-container {
+    max-width: 980px;
+  }
+}
+
+/* Two-column card grid above 900 px, single column below. Used inside
+   Settings groups so cards (Server/Password, Backup/Threshold, etc.)
+   sit side-by-side on desktop. */
+.grid-2col-md {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+@media (min-width: 900px) {
+  .grid-2col-md {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Auto-fill card grid for the Medicines list. Stays single-column
+   until the viewport has room for two ≥ 420 px cards side-by-side. */
+.grid-cards-lg {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+@media (min-width: 1100px) {
+  .grid-cards-lg {
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  }
 }

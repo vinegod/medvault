@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -58,8 +57,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.QueryRowContext(r.Context(),
 		`SELECT COUNT(*) FROM users WHERE username = ?`, req.Username,
 	).Scan(&existing); err != nil {
-		slog.Error("register: check username", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: check username", err)
 		return
 	}
 	if existing > 0 {
@@ -69,8 +67,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		slog.Error("register: hash password", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: hash password", err)
 		return
 	}
 
@@ -80,8 +77,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		slog.Error("register: begin tx", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: begin tx", err)
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck // superseded by Commit on success
@@ -91,8 +87,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		 VALUES (?, ?, ?, ?, ?)`,
 		userID, req.Username, hash, now, now,
 	); err != nil {
-		slog.Error("register: insert user", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: insert user", err)
 		return
 	}
 
@@ -101,8 +96,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		 VALUES (?, ?, ?, ?, ?)`,
 		householdID, req.Username+"'s Household", userID, now, now,
 	); err != nil {
-		slog.Error("register: insert household", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: insert household", err)
 		return
 	}
 
@@ -111,8 +105,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		 VALUES (?, ?, ?, ?)`,
 		userID, householdID, models.RoleOwner, now,
 	); err != nil {
-		slog.Error("register: insert membership", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: insert membership", err)
 		return
 	}
 
@@ -120,14 +113,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET active_household_id = ? WHERE id = ?`,
 		householdID, userID,
 	); err != nil {
-		slog.Error("register: set active household", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: set active household", err)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		slog.Error("register: commit", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "register: commit", err)
 		return
 	}
 
@@ -161,14 +152,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// and same response time. When the user doesn't exist we still run a
 	// bcrypt comparison (against a dummy hash) so the wall-clock cost
 	// matches the "user exists, wrong password" path.
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		auth.EqualizeTimingForMissingUser(req.Password)
 		api.WriteError(w, http.StatusUnauthorized, models.CodeUnauthorized, "invalid credentials")
 		return
 	}
 	if err != nil {
-		slog.Error("login: query user", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "login: query user", err)
 		return
 	}
 	if !auth.CheckPassword(req.Password, user.PasswordHash) {
@@ -216,8 +206,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("refresh: query token", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "refresh: query token", err)
 		return
 	}
 
@@ -225,8 +214,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if err = h.DB.QueryRowContext(r.Context(),
 		`SELECT username FROM users WHERE id = ?`, claims.UserID,
 	).Scan(&username); err != nil {
-		slog.Error("refresh: query user", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "refresh: query user", err)
 		return
 	}
 
@@ -234,22 +222,19 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if _, err = h.DB.ExecContext(r.Context(),
 		`DELETE FROM refresh_tokens WHERE id = ?`, storedID,
 	); err != nil {
-		slog.Error("refresh: delete old token", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "refresh: delete old token", err)
 		return
 	}
 
 	accessToken, err := auth.GenerateAccessToken(h.JWTSecret, claims.UserID, username, h.AccessTTL)
 	if err != nil {
-		slog.Error("refresh: generate access token", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "refresh: generate access token", err)
 		return
 	}
 
 	refreshToken, err := auth.GenerateRefreshToken(h.JWTSecret, claims.UserID, h.RefreshTTL)
 	if err != nil {
-		slog.Error("refresh: generate refresh token", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "refresh: generate refresh token", err)
 		return
 	}
 
@@ -299,8 +284,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.QueryRowContext(r.Context(),
 		`SELECT password_hash, created_at FROM users WHERE id = ?`, userID,
 	).Scan(&currentHash, &createdAt); err != nil {
-		slog.Error("changePassword: query user", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "changePassword: query user", err)
 		return
 	}
 
@@ -311,16 +295,14 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	newHash, err := auth.HashPassword(req.NewPassword)
 	if err != nil {
-		slog.Error("changePassword: hash password", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "changePassword: hash password", err)
 		return
 	}
 
 	now := time.Now().UTC()
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		slog.Error("changePassword: begin tx", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "changePassword: begin tx", err)
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck // superseded by Commit on success
@@ -329,8 +311,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`,
 		newHash, now, userID,
 	); err != nil {
-		slog.Error("changePassword: update hash", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "changePassword: update hash", err)
 		return
 	}
 
@@ -339,14 +320,12 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		`UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`,
 		now, userID,
 	); err != nil {
-		slog.Error("changePassword: revoke tokens", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "changePassword: revoke tokens", err)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		slog.Error("changePassword: commit", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "changePassword: commit", err)
 		return
 	}
 
@@ -371,15 +350,13 @@ func (h *AuthHandler) issueTokens(
 ) (authResponse, bool) {
 	accessToken, err := auth.GenerateAccessToken(h.JWTSecret, userID, username, h.AccessTTL)
 	if err != nil {
-		slog.Error("issueTokens: generate access token", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "issueTokens: generate access token", err)
 		return authResponse{}, false
 	}
 
 	refreshToken, err := auth.GenerateRefreshToken(h.JWTSecret, userID, h.RefreshTTL)
 	if err != nil {
-		slog.Error("issueTokens: generate refresh token", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "issueTokens: generate refresh token", err)
 		return authResponse{}, false
 	}
 
@@ -407,8 +384,7 @@ func (h *AuthHandler) storeRefreshToken(w http.ResponseWriter, r *http.Request, 
 		time.Now().UTC().Add(h.RefreshTTL),
 	)
 	if err != nil {
-		slog.Error("storeRefreshToken", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "storeRefreshToken", err)
 		return false
 	}
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, type FormEvent } from "react";
+import { useState, useEffect, useId, useRef, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,7 +8,11 @@ import {
   getDistinctCategories,
 } from "../services/db";
 import { Button } from "../components/Button";
+import { Icon } from "../components/Icon";
 import { useToast } from "../contexts/ToastContext";
+import { NameSuggest, joinDrugNotes } from "../components/NameSuggest";
+import { resizeImage, uploadPhoto, fetchPhoto, deletePhoto } from "../services/photos";
+import { defaultDaysAfterOpening } from "../utils/effectiveExpiration";
 import type { MedicineInput, MedicineUnit } from "../types";
 
 const UNITS: MedicineUnit[] = [
@@ -29,6 +33,8 @@ const EMPTY: MedicineInput = {
   unit: "tablets",
   category: "",
   expiration_date: "",
+  opened_at: "",
+  days_after_opening: null,
   storage_location: "",
   barcode: "",
   notes: "",
@@ -47,6 +53,17 @@ export default function MedicineForm() {
   const [categorySuggestions, setCategorySuggestions] = useState<string[]>([]);
   const categoryListId = useId();
 
+  // Photo state. photoHash is the hash currently saved on the medicine
+  // (drives the existing-thumbnail render); photoBusy gates the picker
+  // during upload. photoCache holds the most-recently-fetched (hash, url)
+  // pair so we can derive `photoUrl` instead of clearing it via setState
+  // when photoHash transitions to null (which would be a cascading render).
+  const [photoHash, setPhotoHash] = useState<string | null>(null);
+  const [photoCache, setPhotoCache] = useState<{ hash: string; url: string } | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const photoUrl = photoCache && photoCache.hash === photoHash ? photoCache.url : null;
+
   useEffect(() => {
     getDistinctCategories().then(setCategorySuggestions);
   }, []);
@@ -61,16 +78,99 @@ export default function MedicineForm() {
           unit: m.unit,
           category: m.category,
           expiration_date: m.expiration_date ?? "",
+          opened_at: m.opened_at ?? "",
+          days_after_opening: m.days_after_opening,
           storage_location: m.storage_location,
           barcode: m.barcode,
           notes: m.notes,
         });
+        setPhotoHash(m.photo_hash);
       }
     });
   }, [id]);
 
+  // Resolve the photo to a Blob URL whenever a hash is present. Cleanup
+  // revokes the URL on hash change / unmount. When photoHash transitions
+  // to null we *don't* call setState here — the derived `photoUrl` above
+  // handles it by failing the cache-key match.
+  useEffect(() => {
+    if (!id || !photoHash) return;
+    let url: string | null = null;
+    let cancelled = false;
+    fetchPhoto(id, photoHash).then((u) => {
+      if (cancelled) {
+        if (u) URL.revokeObjectURL(u);
+        return;
+      }
+      if (u) {
+        url = u;
+        setPhotoCache({ hash: photoHash, url: u });
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [id, photoHash]);
+
   function set<K extends keyof MedicineInput>(key: K, value: MedicineInput[K]) {
     setFields((f) => ({ ...f, [key]: value }));
+  }
+
+  // changeUnit is `set("unit", ...)` plus the days-after-opening default
+  // sync. Done at the call site (rather than via a unit-watching effect)
+  // so the lint rule against setState-in-effect stays clean. Existing
+  // custom values are preserved so editing the unit doesn't silently
+  // overwrite a deliberate "30 days" the user typed earlier.
+  function changeUnit(unit: MedicineUnit) {
+    setFields((f) => {
+      const next = { ...f, unit };
+      if (f.days_after_opening == null) {
+        const def = defaultDaysAfterOpening(unit);
+        if (def != null) next.days_after_opening = def;
+      }
+      return next;
+    });
+  }
+
+  async function handlePhotoFile(file: File) {
+    if (!id) {
+      // No medicine id yet (still on Create) — instruct the user. We could
+      // queue the upload until after save, but the extra state machine
+      // isn't worth it; saving first is a reasonable expectation.
+      setError(t("medicine_form.save_before_photo"));
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      const { blob, hash } = await resizeImage(file);
+      const res = await uploadPhoto(id, blob, hash);
+      if (!res.ok) {
+        toast.error(res.error ?? t("medicine_form.photo_failed"));
+        return;
+      }
+      setPhotoHash(hash);
+      toast.success(t("medicine_form.photo_uploaded"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("medicine_form.photo_failed"));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function handlePhotoRemove() {
+    if (!id || !photoHash) return;
+    setPhotoBusy(true);
+    const ok = await deletePhoto(id, photoHash);
+    setPhotoBusy(false);
+    if (ok) {
+      // photoUrl is derived from (photoCache, photoHash); clearing the
+      // hash makes the cache-key match fail on the next render.
+      setPhotoHash(null);
+      toast.success(t("medicine_form.photo_removed"));
+    } else {
+      toast.error(t("medicine_form.photo_failed"));
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -89,6 +189,7 @@ export default function MedicineForm() {
     const payload: MedicineInput = {
       ...fields,
       expiration_date: fields.expiration_date || (null as unknown as string),
+      opened_at: fields.opened_at || (null as unknown as string),
     };
 
     setLoading(true);
@@ -111,14 +212,22 @@ export default function MedicineForm() {
   return (
     <form onSubmit={handleSubmit} style={formStyle}>
       <Field label={t("medicine_form.name")} required>
-        <input
-          style={inp}
+        <NameSuggest
           value={fields.name}
-          onChange={(e) => set("name", e.target.value)}
+          onChange={(v) => set("name", v)}
+          onPick={(s) =>
+            setFields((f) => ({
+              ...f,
+              name: s.name,
+              category: f.category === "" ? (s.ingredients ?? "") : f.category,
+              notes: f.notes === "" ? joinDrugNotes(s.inn, s.pharma_group) : f.notes,
+            }))
+          }
           placeholder={t("medicine_form.name_placeholder")}
           maxLength={200}
           required
           autoFocus={!isEdit}
+          inputStyle={inp}
         />
       </Field>
 
@@ -131,14 +240,17 @@ export default function MedicineForm() {
             min={0}
             max={99999}
             value={fields.quantity}
-            onChange={(e) => set("quantity", Number(e.target.value))}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              set("quantity", Number.isNaN(n) ? 0 : Math.max(0, n));
+            }}
           />
         </Field>
         <Field label={t("medicine_form.unit")} style={{ flex: 1 }}>
           <select
             style={inp}
             value={fields.unit}
-            onChange={(e) => set("unit", e.target.value as MedicineUnit)}
+            onChange={(e) => changeUnit(e.target.value as MedicineUnit)}
           >
             {UNITS.map((u) => (
               <option key={u} value={u}>
@@ -175,6 +287,37 @@ export default function MedicineForm() {
         />
       </Field>
 
+      <div style={{ display: "flex", gap: "0.75rem" }}>
+        <Field label={t("medicine_form.opened_at")} style={{ flex: 1 }}>
+          <input
+            style={inp}
+            type="date"
+            value={fields.opened_at ?? ""}
+            onChange={(e) => set("opened_at", e.target.value)}
+          />
+        </Field>
+        <Field label={t("medicine_form.days_after_opening")} style={{ flex: 1 }}>
+          <input
+            style={inp}
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={3650}
+            value={fields.days_after_opening ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === "") {
+                set("days_after_opening", null);
+                return;
+              }
+              const n = Number(raw);
+              set("days_after_opening", Number.isNaN(n) ? null : n);
+            }}
+            placeholder={t("medicine_form.days_after_opening_placeholder")}
+          />
+        </Field>
+      </div>
+
       <Field label={t("medicine_form.storage_location")}>
         <input
           style={inp}
@@ -203,7 +346,73 @@ export default function MedicineForm() {
           placeholder={t("medicine_form.notes_placeholder")}
           maxLength={500}
         />
+        <small
+          style={{
+            color: fields.notes.length > 480 ? "var(--color-error)" : "var(--color-text-muted)",
+            fontSize: "0.78rem",
+          }}
+        >
+          {t("medicine_form.notes_counter", { count: fields.notes.length })}
+        </small>
       </Field>
+
+      {/* Photo: only available on existing medicines (needs an id for the
+          upload endpoint). Hidden on create until the user saves once. */}
+      {isEdit && (
+        <Field label={t("medicine_form.photo")}>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handlePhotoFile(file);
+              e.target.value = "";
+            }}
+          />
+          {photoUrl && (
+            <img
+              src={photoUrl}
+              alt={t("medicine_form.photo_alt")}
+              style={{
+                width: "100%",
+                maxHeight: 240,
+                objectFit: "contain",
+                background: "var(--color-bg)",
+                borderRadius: "var(--radius)",
+                border: "1px solid var(--color-border)",
+                marginBottom: "0.5rem",
+              }}
+            />
+          )}
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={photoBusy}
+              iconLeft={<Icon name="upload" size={14} />}
+            >
+              {photoHash ? t("medicine_form.photo_replace") : t("medicine_form.photo_attach")}
+            </Button>
+            {photoHash && (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={handlePhotoRemove}
+                disabled={photoBusy}
+                iconLeft={<Icon name="trash" size={14} />}
+              >
+                {t("medicine_form.photo_remove")}
+              </Button>
+            )}
+          </div>
+        </Field>
+      )}
 
       {error && <p style={{ color: "var(--color-error)", fontSize: "0.9rem" }}>{error}</p>}
 
@@ -234,7 +443,7 @@ function Field({
     <label style={{ ...lblStyle, ...style }}>
       <span style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
         {label}
-        {required && <span style={{ color: "var(--color-accent)" }}> *</span>}
+        {required && <span style={{ color: "var(--color-primary)" }}> *</span>}
       </span>
       {children}
     </label>

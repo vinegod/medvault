@@ -14,17 +14,22 @@ export function SyncBadge() {
   const { t, i18n } = useTranslation();
   const [busy, setBusy] = useState(false);
 
-  // Reactive read of the last_sync meta key so the relative time updates
-  // automatically after each successful sync.
   const lastSync = useLiveQuery(async () => {
     const r = await db.meta.get("last_sync");
     return r?.value ?? null;
   }, []);
 
+  const pendingCount =
+    useLiveQuery(() => db.medicines.where("sync_status").equals("pending").count(), []) ?? 0;
+
   const cfg = (() => {
     switch (status) {
       case "connected":
-        return { icon: "wifi" as const, color: "var(--color-success)", label: t("sync.synced") };
+        return {
+          icon: "wifi" as const,
+          color: stalenessColor(lastSync ?? null),
+          label: t("sync.synced"),
+        };
       case "connecting":
         return {
           icon: "wifi" as const,
@@ -34,7 +39,7 @@ export function SyncBadge() {
       case "error":
         return {
           icon: "wifi-off" as const,
-          color: "var(--color-error)",
+          color: "var(--color-destructive)",
           label: t("sync.reconnect"),
         };
       default:
@@ -58,7 +63,11 @@ export function SyncBadge() {
 
   const relative =
     status === "connected" ? formatRelative(lastSync ?? null, i18n.language, t) : null;
-  const tooltip = relative ? `${cfg.label} · ${relative}` : cfg.label;
+  const pendingLabel =
+    pendingCount > 0 ? ` · ${t("sync.pending_count", { count: pendingCount })}` : "";
+  const tooltip = relative
+    ? `${cfg.label} · ${relative}${pendingLabel}`
+    : `${cfg.label}${pendingLabel}`;
 
   // Connected: render as a button. Other states stay non-interactive.
   if (status === "connected") {
@@ -71,7 +80,14 @@ export function SyncBadge() {
         style={{ ...style, color: cfg.color, cursor: busy ? "default" : "pointer" }}
       >
         <Icon name={cfg.icon} size={16} />
-        <span>{busy ? t("sync.syncing") : (relative ?? cfg.label)}</span>
+        <span>
+          {busy ? t("sync.syncing") : (relative ?? cfg.label)}
+          {pendingCount > 0 && (
+            <span style={{ marginLeft: "0.25rem", opacity: 0.7 }}>
+              ({t("sync.pending_count", { count: pendingCount })})
+            </span>
+          )}
+        </span>
       </button>
     );
   }
@@ -82,6 +98,18 @@ export function SyncBadge() {
       {cfg.label}
     </span>
   );
+}
+
+// stalenessColor maps last-sync age to a colour token. Connection status
+// alone isn't enough: a green wifi icon next to "8 days ago" is a lie.
+// Tiers: <5m green, <1h muted, <24h amber, ≥24h red.
+function stalenessColor(iso: string | null): string {
+  if (!iso) return "var(--color-success)"; // just connected, first sync incoming
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 5 * 60 * 1000) return "var(--color-success)";
+  if (ms < 60 * 60 * 1000) return "var(--color-text-muted)";
+  if (ms < 24 * 60 * 60 * 1000) return "var(--color-warning)";
+  return "var(--color-destructive)";
 }
 
 // formatRelative returns "Synced X min ago" / "Synced just now" etc.
@@ -113,6 +141,7 @@ const style: React.CSSProperties = {
   fontSize: "0.8rem",
   background: "transparent",
   border: "none",
-  padding: "0.25rem 0.5rem",
+  padding: "0.6rem 0.5rem",
   borderRadius: "var(--radius)",
+  minHeight: "var(--tap)",
 };

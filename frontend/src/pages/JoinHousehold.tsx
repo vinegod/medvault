@@ -60,7 +60,7 @@ export default function JoinHousehold() {
           required
         />
 
-        <Button type="submit" disabled={loading || code.trim().length < 6} fullWidth>
+        <Button type="submit" disabled={loading || code.trim().length !== 8} fullWidth>
           {loading ? t("join_household.joining") : t("join_household.join_button")}
         </Button>
       </form>

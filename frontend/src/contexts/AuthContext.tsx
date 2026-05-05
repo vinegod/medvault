@@ -59,12 +59,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Restore persisted session and listen for status changes.
   useEffect(() => {
+    let cancelled = false;
+
     async function restore() {
       const [storedUrl, storedId, storedUsername] = await Promise.all([
         getMeta("server_url"),
         getMeta("user_id"),
         getMeta("username"),
       ]);
+      if (cancelled) return;
 
       setServerUrl(storedUrl);
       if (storedId && storedUsername) {
@@ -72,11 +75,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       await initServerConnection();
+      if (cancelled) return;
       setInitialized(true);
     }
 
-    restore();
-    return onServerStatusChange(setStatus);
+    void restore();
+    const unsubscribe = onServerStatusChange(setStatus);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   // React to server-status changes: load the household list on connect,

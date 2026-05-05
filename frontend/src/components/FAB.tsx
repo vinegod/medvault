@@ -25,7 +25,7 @@ const style: React.CSSProperties = {
   width: 56,
   height: 56,
   borderRadius: "50%",
-  background: "var(--color-accent)",
+  background: "var(--color-primary)",
   color: "#fff",
   display: "flex",
   alignItems: "center",

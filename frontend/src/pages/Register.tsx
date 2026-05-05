@@ -19,7 +19,13 @@ export default function Register() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const result = await connect(serverUrl.trim().replace(/\/$/, ""), username, password, true);
+    // See Login.tsx — trim username, leave password as-typed.
+    const result = await connect(
+      serverUrl.trim().replace(/\/$/, ""),
+      username.trim(),
+      password,
+      true
+    );
     setLoading(false);
     if (result.success) {
       toast.success(t("auth.account_created"));
@@ -71,7 +77,14 @@ export default function Register() {
               autoComplete="new-password"
               required
             />
-            <small style={hint}>{t("auth.password_hint")}</small>
+            <small
+              style={{
+                ...hint,
+                color: password.length >= 8 ? "var(--color-success, #0a7c2f)" : undefined,
+              }}
+            >
+              {password.length >= 8 ? t("auth.password_ok") : t("auth.password_min")}
+            </small>
           </label>
 
           <Button type="submit" disabled={loading} fullWidth size="lg">

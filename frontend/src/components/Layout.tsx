@@ -15,7 +15,7 @@ export function Layout() {
   return (
     <>
       <Header />
-      <main style={main}>
+      <main className="app-container" style={main}>
         <Outlet />
       </main>
       <BottomNav />
@@ -26,7 +26,6 @@ export function Layout() {
 const main: React.CSSProperties = {
   flex: 1,
   width: "100%",
-  maxWidth: 700,
   margin: "0 auto",
   padding: "1rem 1rem calc(var(--nav-h) + var(--safe-bottom) + 1rem)",
   // Bottom padding leaves room for fixed BottomNav so content isn't hidden.

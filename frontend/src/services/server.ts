@@ -1,4 +1,5 @@
-import { db, getMeta, setMeta, deleteMeta, markAllAsLocal } from "./db";
+import i18n from "../i18n";
+import { db, getMeta, setMeta, deleteMeta } from "./db";
 import { apiClient } from "./api";
 import { performSync, initSyncListeners, stopSyncListeners } from "./sync";
 import type { ServerConnectionStatus, AuthResponse } from "../types";
@@ -81,7 +82,8 @@ export async function connectToServer(
   const healthy = await checkServerHealth(url);
   if (!healthy) {
     setStatus("disconnected");
-    return { success: false, error: "Server not reachable or not a MedVault server" };
+    // Translate at the source — callers display result.error verbatim.
+    return { success: false, error: i18n.t("auth.server_unreachable") };
   }
 
   // Register or login
@@ -150,7 +152,10 @@ export async function disconnectFromServer(): Promise<void> {
 
   // Delete every record that ever touched this server (synced, pending,
   // conflict). Without this, reconnecting to a different server would
-  // upload these as if they belonged to the new household.
+  // upload these as if they belonged to the new household. The "local"
+  // label is reserved for records created while no server was configured;
+  // we never re-label here, so there's no risk of mid-flight records being
+  // mistaken for standalone ones on the next connect.
   await db.medicines.where("sync_status").notEqual("local").delete();
 
   await deleteMeta("server_url");
@@ -161,10 +166,6 @@ export async function disconnectFromServer(): Promise<void> {
 
   apiClient.setBaseUrl("");
   apiClient.setAccessToken(null);
-
-  // Anything that survived (sync_status === "local") was created standalone;
-  // make sure the marker is consistent in case anything was mid-flight.
-  await markAllAsLocal();
 
   setStatus("disconnected");
 }

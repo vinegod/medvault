@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useEffect } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { ToastProvider } from "./contexts/ToastContext";
+import { ToastProvider, useToast } from "./contexts/ToastContext";
 import { Layout } from "./components/Layout";
+import { setSyncErrorHandler } from "./services/sync";
 import "./index.css";
 
 import Login from "./pages/Login";
@@ -15,6 +17,7 @@ import Household from "./pages/Household";
 import JoinHousehold from "./pages/JoinHousehold";
 import CreateHousehold from "./pages/CreateHousehold";
 import OnboardingHousehold from "./pages/OnboardingHousehold";
+import NotFound from "./pages/NotFound";
 
 // Server-only routes redirect to /settings if no server is connected.
 function ConnectedOnly() {
@@ -32,6 +35,15 @@ function InitializingScreen() {
       <p style={{ color: "var(--color-text-muted)" }}>{t("common.loading")}</p>
     </div>
   );
+}
+
+function SyncErrorHandler() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  useEffect(() => {
+    setSyncErrorHandler(() => toast.error(t("sync.error_failed")));
+  }, [toast, t]);
+  return null;
 }
 
 function AppRoutes() {
@@ -61,7 +73,9 @@ function AppRoutes() {
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/medicines" replace />} />
+      <Route element={<Layout />}>
+        <Route path="*" element={<NotFound />} />
+      </Route>
     </Routes>
   );
 }
@@ -71,6 +85,7 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
+          <SyncErrorHandler />
           <AppRoutes />
         </BrowserRouter>
       </ToastProvider>

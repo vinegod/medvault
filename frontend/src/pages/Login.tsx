@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { Button } from "../components/Button";
+import { validateServerUrl } from "../utils/serverUrl";
 
 export default function Login() {
   const { connect } = useAuth();
@@ -12,6 +13,7 @@ export default function Login() {
   const { t } = useTranslation();
 
   const [serverUrl, setServerUrl] = useState("http://localhost:8080");
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,7 +21,15 @@ export default function Login() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const result = await connect(serverUrl.trim().replace(/\/$/, ""), username, password, false);
+    // Trim username so leading/trailing whitespace doesn't masquerade as
+    // "invalid credentials". Password is left as-typed: a trailing space
+    // there is a real password choice, not user error.
+    const result = await connect(
+      serverUrl.trim().replace(/\/$/, ""),
+      username.trim(),
+      password,
+      false
+    );
     setLoading(false);
     if (result.success) {
       toast.success(t("auth.welcome_back", { username }));
@@ -39,12 +49,21 @@ export default function Login() {
           <label style={lbl}>
             {t("auth.server_url")}
             <input
-              style={inp}
+              style={{ ...inp, borderColor: urlError ? "var(--color-error)" : undefined }}
               type="url"
               value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
+              onChange={(e) => {
+                setServerUrl(e.target.value);
+                setUrlError(null);
+              }}
+              onBlur={(e) => setUrlError(validateServerUrl(e.target.value))}
               required
             />
+            {urlError && (
+              <small style={{ color: "var(--color-error)", fontSize: "0.8rem" }}>
+                {t(urlError)}
+              </small>
+            )}
           </label>
 
           <label style={lbl}>

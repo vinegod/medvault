@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -29,7 +28,8 @@ func scanMedicine(row interface {
 ) error {
 	if err := row.Scan(
 		&m.ID, &m.Name, &m.Quantity, &m.Unit, &m.Category,
-		&m.ExpirationDate, &m.StorageLocation, &m.Barcode, &m.Notes,
+		&m.ExpirationDate, &m.OpenedAt, &m.DaysAfterOpening,
+		&m.StorageLocation, &m.Barcode, &m.Notes, &m.PhotoHash,
 		&m.CreatedAt, &m.UpdatedAt, &m.DeletedAt,
 	); err != nil {
 		return fmt.Errorf("scan medicine: %w", err)
@@ -41,7 +41,8 @@ func scanMedicine(row interface {
 // Includes the FROM clause so callers just append a WHERE.
 const medicineSelectFrom = `SELECT
 	id, name, quantity, unit, category,
-	expiration_date, storage_location, barcode, notes,
+	expiration_date, opened_at, days_after_opening,
+	storage_location, barcode, notes, photo_hash,
 	created_at, updated_at, deleted_at
 	FROM medicines`
 
@@ -56,8 +57,7 @@ func (h *MedicineHandler) List(w http.ResponseWriter, r *http.Request) {
 		householdID,
 	)
 	if err != nil {
-		slog.Error("List medicines: query", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "List medicines: query", err)
 		return
 	}
 	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
@@ -66,15 +66,13 @@ func (h *MedicineHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var m models.Medicine
 		if err := scanMedicine(rows, &m); err != nil {
-			slog.Error("List medicines: scan", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+			api.ServerError(w, "List medicines: scan", err)
 			return
 		}
 		medicines = append(medicines, m)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("List medicines: rows", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "List medicines: rows", err)
 		return
 	}
 
@@ -96,8 +94,7 @@ func (h *MedicineHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("Get medicine: query", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Get medicine: query", err)
 		return
 	}
 
@@ -125,16 +122,17 @@ func (h *MedicineHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_, err := h.DB.ExecContext(r.Context(),
 		`INSERT INTO medicines
 		 (id, household_id, created_by, name, quantity, unit, category,
-		  expiration_date, storage_location, barcode, notes, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  expiration_date, opened_at, days_after_opening,
+		  storage_location, barcode, notes, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, householdID, callerID,
 		req.Name, req.Quantity, req.Unit, req.Category,
-		req.ExpirationDate, req.StorageLocation, req.Barcode, req.Notes,
+		req.ExpirationDate, req.OpenedAt, req.DaysAfterOpening,
+		req.StorageLocation, req.Barcode, req.Notes,
 		now, now,
 	)
 	if err != nil {
-		slog.Error("Create medicine: insert", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Create medicine: insert", err)
 		return
 	}
 
@@ -142,10 +140,13 @@ func (h *MedicineHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := scanMedicine(h.DB.QueryRowContext(r.Context(),
 		medicineSelectFrom+` WHERE id = ?`, id,
 	), &m); err != nil {
-		slog.Error("medicine read-back after write", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "medicine read-back after write", err)
 		return
 	}
+
+	WriteAudit(r.Context(), h.DB, householdID, callerID,
+		middleware.UsernameFrom(r.Context()),
+		"medicine.create", "medicine", &m.ID, &m.Name)
 
 	api.WriteJSON(w, http.StatusCreated, m)
 }
@@ -163,8 +164,7 @@ func (h *MedicineHandler) Update(w http.ResponseWriter, r *http.Request) {
 		`SELECT COUNT(*) FROM medicines WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
 		id, householdID,
 	).Scan(&exists); err != nil {
-		slog.Error("Update medicine: existence check", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Update medicine: existence check", err)
 		return
 	}
 	if exists == 0 {
@@ -186,16 +186,17 @@ func (h *MedicineHandler) Update(w http.ResponseWriter, r *http.Request) {
 	_, err := h.DB.ExecContext(r.Context(),
 		`UPDATE medicines
 		 SET name=?, quantity=?, unit=?, category=?,
-		     expiration_date=?, storage_location=?, barcode=?, notes=?,
+		     expiration_date=?, opened_at=?, days_after_opening=?,
+		     storage_location=?, barcode=?, notes=?,
 		     updated_at=?
 		 WHERE id = ? AND household_id = ?`,
 		req.Name, req.Quantity, req.Unit, req.Category,
-		req.ExpirationDate, req.StorageLocation, req.Barcode, req.Notes,
+		req.ExpirationDate, req.OpenedAt, req.DaysAfterOpening,
+		req.StorageLocation, req.Barcode, req.Notes,
 		now, id, householdID,
 	)
 	if err != nil {
-		slog.Error("Update medicine: exec", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Update medicine: exec", err)
 		return
 	}
 
@@ -203,10 +204,14 @@ func (h *MedicineHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := scanMedicine(h.DB.QueryRowContext(r.Context(),
 		medicineSelectFrom+` WHERE id = ?`, id,
 	), &m); err != nil {
-		slog.Error("medicine read-back after write", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "medicine read-back after write", err)
 		return
 	}
+
+	WriteAudit(r.Context(), h.DB, householdID,
+		middleware.UserIDFrom(r.Context()),
+		middleware.UsernameFrom(r.Context()),
+		"medicine.update", "medicine", &m.ID, &m.Name)
 
 	api.WriteJSON(w, http.StatusOK, m)
 }
@@ -217,14 +222,29 @@ func (h *MedicineHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	householdID := middleware.HouseholdIDFrom(r.Context())
 	id := chi.URLParam(r, "id")
 
+	// Capture the name first so the audit row can include it after the
+	// soft-delete. SQLite supports RETURNING but mixing it with the
+	// UPDATE complicates portability; one extra SELECT is fine here.
+	var name string
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT name FROM medicines WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
+		id, householdID,
+	).Scan(&name); errors.Is(err, sql.ErrNoRows) {
+		api.WriteError(w, http.StatusNotFound, models.CodeNotFound, "medicine not found")
+		return
+	} else if err != nil {
+		api.ServerError(w, "Delete medicine: name lookup", err)
+		return
+	}
+
+	now := time.Now().UTC()
 	res, err := h.DB.ExecContext(r.Context(),
 		`UPDATE medicines SET deleted_at = ?, updated_at = ?
 		 WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
-		time.Now().UTC(), time.Now().UTC(), id, householdID,
+		now, now, id, householdID,
 	)
 	if err != nil {
-		slog.Error("Delete medicine: exec", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Delete medicine: exec", err)
 		return
 	}
 
@@ -233,6 +253,11 @@ func (h *MedicineHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, http.StatusNotFound, models.CodeNotFound, "medicine not found")
 		return
 	}
+
+	WriteAudit(r.Context(), h.DB, householdID,
+		middleware.UserIDFrom(r.Context()),
+		middleware.UsernameFrom(r.Context()),
+		"medicine.delete", "medicine", &id, &name)
 
 	api.WriteJSON(w, http.StatusOK, nil)
 }

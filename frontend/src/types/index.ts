@@ -1,4 +1,9 @@
 // Core medicine record — used in both IndexedDB and server
+//
+// opened_at + days_after_opening together produce an "effective" expiration
+// (see utils/effectiveExpiration.ts). Both are optional. photo_hash is the
+// SHA-256 hex of the most recent uploaded photo, served by
+// /api/medicines/{id}/photo. Photos themselves are cached in IndexedDB.
 export interface Medicine {
   id: string;
   name: string;
@@ -6,9 +11,12 @@ export interface Medicine {
   unit: MedicineUnit;
   category: string;
   expiration_date: string | null; // ISO date string "2027-03-15"
+  opened_at: string | null;
+  days_after_opening: number | null;
   storage_location: string;
   barcode: string;
   notes: string;
+  photo_hash: string | null;
   created_at: string; // ISO datetime
   updated_at: string; // ISO datetime
   deleted_at: string | null; // ISO datetime, null = active
@@ -43,9 +51,29 @@ export interface MedicineInput {
   unit: MedicineUnit;
   category: string;
   expiration_date: string;
+  opened_at: string;
+  days_after_opening: number | null;
   storage_location: string;
   barcode: string;
   notes: string;
+}
+
+// One row of the household activity log.
+export interface AuditEntry {
+  id: string;
+  username: string;
+  action:
+    | "medicine.create"
+    | "medicine.update"
+    | "medicine.delete"
+    | "household.rename"
+    | "household.member.add"
+    | "household.member.remove"
+    | "household.transfer";
+  target_type: string;
+  target_id: string | null;
+  target_name: string | null;
+  at: string;
 }
 
 // Sync request/response (only used when server is connected)
@@ -139,6 +167,16 @@ export interface Invite {
   invited_by: string;
   expires_at: string;
   created_at?: string;
+}
+
+// One row of GET /api/drugs/search. Pointer fields on the server map to
+// undefined here when the source DB had NULL.
+export interface DrugSuggestion {
+  name: string;
+  inn?: string;
+  ingredients?: string;
+  pharma_group?: string;
+  country: string;
 }
 
 // One row of GET /api/households — used by the switcher and Household page.

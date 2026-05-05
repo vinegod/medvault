@@ -40,7 +40,10 @@
     "days_ago_one": "{{count}} дн тому",
     "days_ago_few": "{{count}} дн тому",
     "days_ago_many": "{{count}} дн тому",
-    "days_ago_other": "{{count}} дн тому"
+    "days_ago_other": "{{count}} дн тому",
+    "error_failed": "Синхронізація не вдалася — зміни повторяться автоматично",
+    "pending_count_one": "{{count}} очікує",
+    "pending_count_other": "{{count}} очікують"
   },
   "search": {
     "placeholder": "Пошук…",
@@ -79,7 +82,8 @@
     "expired_ago": "Прострочено {{days}} дн. тому",
     "expires_today": "Закінчується сьогодні",
     "expires_in": "Закінчується через {{days}} дн.",
-    "expires_on": "Закінчується {{date}}"
+    "expires_on": "Закінчується {{date}}",
+    "restock": "Поповнити?"
   },
   "medicines": {
     "loading": "Завантаження…",
@@ -97,7 +101,13 @@
     "expired": "Прострочено",
     "expiring_30": "Закінчуються протягом 30 днів",
     "expiring_90": "Закінчуються протягом 90 днів",
-    "low_stock": "Закінчуються запаси"
+    "low_stock": "Закінчуються запаси",
+    "export_shopping_list": "Експортувати список покупок",
+    "shopping_list_title": "Список покупок MedVault",
+    "shopping_list_replace": "Замінити:",
+    "shopping_list_restock": "Поповнити:",
+    "shopping_list_copied": "Список покупок скопійовано в буфер обміну.",
+    "shopping_list_failed": "Не вдалося скопіювати. Спробуйте довге натискання."
   },
   "auth": {
     "title": "MedVault",
@@ -114,10 +124,14 @@
     "continue_without": "Продовжити без сервера →",
     "welcome_back": "З поверненням, {{username}}.",
     "connection_failed": "Помилка підключення.",
+    "server_unreachable": "Сервер недоступний або це не сервер MedVault.",
     "account_created": "Обліковий запис створено!",
     "registration_failed": "Помилка реєстрації.",
     "username_hint": "3–30 символів: літери, цифри, підкреслення.",
-    "password_hint": "Не менше 8 символів."
+    "password_hint": "Не менше 8 символів.",
+    "invalid_url": "Введіть коректну URL-адресу, що починається з http:// або https://",
+    "password_min": "Щонайменше 8 символів",
+    "password_ok": "Довжина пароля відповідає вимогам"
   },
   "medicine_form": {
     "name": "Назва",
@@ -138,9 +152,28 @@
     "save_failed": "Не вдалося зберегти. Спробуйте ще раз.",
     "saving": "Збереження…",
     "updated": "Оновлено {{name}}.",
-    "added": "Додано {{name}}."
+    "added": "Додано {{name}}.",
+    "suggestions_loading": "Пошук…",
+    "suggestions_none": "Збігів не знайдено",
+    "notes_counter": "{{count}} / 500",
+    "opened_at": "Дата відкриття",
+    "days_after_opening": "Використати протягом (днів після відкриття)",
+    "days_after_opening_placeholder": "напр. 28",
+    "photo": "Фото",
+    "photo_alt": "Фото ліків",
+    "photo_attach": "Додати фото",
+    "photo_replace": "Замінити фото",
+    "photo_remove": "Видалити фото",
+    "photo_uploaded": "Фото збережено.",
+    "photo_removed": "Фото видалено.",
+    "photo_failed": "Не вдалося зберегти фото.",
+    "save_before_photo": "Спершу збережіть ліки, потім додайте фото.",
+    "show_more": "Показати більше результатів"
   },
   "settings": {
+    "group_account": "Обліковий запис",
+    "group_data": "Дані",
+    "group_preferences": "Уподобання",
     "server_title": "Сервер",
     "connected_as": "Підключено як",
     "error_reconnect": "Не вдалося підключитися. Увійдіть знову для синхронізації.",
@@ -154,6 +187,19 @@
     "password_failed": "Не вдалося змінити пароль. Перевірте поточний пароль.",
     "backup_title": "Резервна копія",
     "backup_description": "Експортуйте всі ліки у файл JSON або відновіть з попереднього експорту.",
+    "backup_encrypt": "Зашифрувати паролем",
+    "passphrase_placeholder": "Парольна фраза (мін. 8 символів)",
+    "passphrase_too_short": "Парольна фраза має містити щонайменше 8 символів.",
+    "import_passphrase_prompt": "Введіть парольну фразу, з якою було експортовано цей файл:",
+    "import_decrypt_failed": "Не вдалося розшифрувати — неправильна парольна фраза або пошкоджений файл.",
+    "notifications_title": "Сповіщення про закінчення терміну",
+    "notifications_description": "Щоденне нагадування, коли ліки незабаром закінчиться. Працює без передачі даних з пристрою.",
+    "notifications_enable": "Увімкнути сповіщення",
+    "notifications_disable": "Вимкнути сповіщення",
+    "notifications_enabled": "Сповіщення увімкнено.",
+    "notifications_disabled": "Сповіщення вимкнено.",
+    "notifications_blocked": "Сповіщення заблоковано. Дозвольте їх у налаштуваннях браузера та спробуйте ще раз.",
+    "notifications_browser_blocked": "Браузер блокує сповіщення для цього сайту.",
     "pwa_title": "Встановити додаток",
     "pwa_description": "Додайте MedVault на головний екран для швидкого доступу та нативного вигляду.",
     "appearance_title": "Зовнішній вигляд",
@@ -222,6 +268,17 @@
     "leave_confirm_title": "Покинути домогосподарство?",
     "leave_confirm_description": "Локальна копія ліків буде видалена. Це не можна скасувати.",
     "leave_transfer_required": "Ви єдиний власник — передайте власність перед тим, як покинути.",
+    "activity_title": "Активність",
+    "activity_empty": "Активності ще немає.",
+    "audit": {
+      "medicine.create": "додано {{target}}",
+      "medicine.update": "оновлено {{target}}",
+      "medicine.delete": "видалено {{target}}",
+      "household.rename": "перейменовано на {{target}}",
+      "household.member.add": "приєднано до домогосподарства",
+      "household.member.remove": "видалено учасника {{target}}",
+      "household.transfer": "передано власність {{target}}"
+    },
     "left": "Ви покинули домогосподарство."
   },
   "household_switcher": {
@@ -277,5 +334,10 @@
   "confirm_dialog": {
     "confirm": "Підтвердити",
     "cancel": "Скасувати"
+  },
+  "not_found": {
+    "title": "Сторінку не знайдено",
+    "description": "Сторінки, яку ви шукаєте, не існує.",
+    "go_home": "До ліків"
   }
 }

@@ -88,8 +88,8 @@ const titleStyle: React.CSSProperties = {
 };
 
 const backBtn: React.CSSProperties = {
-  width: 40,
-  height: 40,
+  width: "var(--tap)",
+  height: "var(--tap)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",

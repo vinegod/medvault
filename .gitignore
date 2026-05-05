@@ -2,10 +2,14 @@
 .env
 
 # Database
-*.db
+# Drug-reference DBs at backend/data/<country>/drugs.db are committed artifacts;
+# only user-data DBs and the dev-only source CSVs are ignored.
+backend/data/medvault.db
+backend/data/medvault.db-wal
+backend/data/medvault.db-shm
+backend/data/**/*.csv
 *.db-wal
 *.db-shm
-data/
 
 # Go
 backend/medvault

@@ -11,6 +11,7 @@ const (
 	usernameKey
 	householdIDKey
 	roleKey
+	requestIDKey
 )
 
 // UserIDFrom returns the authenticated user's id from ctx, or "" if absent.
@@ -34,5 +35,12 @@ func HouseholdIDFrom(ctx context.Context) string {
 // RoleFrom returns the user's role in the active household, or "".
 func RoleFrom(ctx context.Context) string {
 	v, _ := ctx.Value(roleKey).(string)
+	return v
+}
+
+// RequestIDFrom returns the per-request id injected by the RequestID
+// middleware, or "" if none was set (e.g. a panic in RequestID itself).
+func RequestIDFrom(ctx context.Context) string {
+	v, _ := ctx.Value(requestIDKey).(string)
 	return v
 }

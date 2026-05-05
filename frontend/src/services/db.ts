@@ -41,6 +41,7 @@ export async function addMedicine(input: MedicineInput): Promise<LocalMedicine> 
   const medicine: LocalMedicine = {
     id: crypto.randomUUID(),
     ...input,
+    photo_hash: null,
     created_at: now,
     updated_at: now,
     deleted_at: null,
@@ -120,15 +121,6 @@ export async function getExpiringMedicines(withinDays: number): Promise<LocalMed
     .sortBy("expiration_date");
 }
 
-export async function getExpiredMedicines(): Promise<LocalMedicine[]> {
-  const todayStr = new Date().toISOString().split("T")[0];
-  return db.medicines
-    .filter(
-      (m) => m.deleted_at === null && m.expiration_date !== null && m.expiration_date < todayStr
-    )
-    .sortBy("expiration_date");
-}
-
 // getLowStockMedicines returns active medicines at or below the threshold
 // (0 included). Sorted ascending so the most-empty appears first.
 export async function getLowStockMedicines(threshold: number): Promise<LocalMedicine[]> {
@@ -155,10 +147,6 @@ export async function getDistinctCategories(): Promise<string[]> {
 
 export async function getPendingChanges(): Promise<LocalMedicine[]> {
   return db.medicines.where("sync_status").equals("pending").toArray();
-}
-
-export async function markAllAsLocal(): Promise<void> {
-  await db.medicines.toCollection().modify({ sync_status: "local" });
 }
 
 // ── Export / Import (manual backup — works without server) ────

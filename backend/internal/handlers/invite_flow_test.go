@@ -46,19 +46,30 @@ func newHarness(t *testing.T) *harness {
 	r := chi.NewRouter()
 	r.Post("/api/auth/register", authH.Register)
 	r.Post("/api/auth/login", authH.Login)
+	r.Post("/api/auth/refresh", authH.Refresh)
+	r.Post("/api/auth/logout", authH.Logout)
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(testutil.JWTSecret))
-		r.Use(middleware.RequireHousehold(db))
 
-		r.Get("/api/medicines", medH.List)
-		r.Post("/api/medicines", medH.Create)
-		r.Post("/api/sync", syncH.Sync)
+		// Per-user, no household middleware.
+		r.Post("/api/auth/password", authH.ChangePassword)
 
-		r.Get("/api/households/current", hhH.GetCurrent)
-		r.Post("/api/households/join", hhH.Join)
-		r.Post("/api/households/{id}/invite", hhH.CreateInvite)
-		r.Delete("/api/households/{id}/members/{user_id}", hhH.RemoveMember)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireHousehold(db))
+
+			r.Get("/api/medicines", medH.List)
+			r.Post("/api/medicines", medH.Create)
+			r.Get("/api/medicines/{id}", medH.Get)
+			r.Put("/api/medicines/{id}", medH.Update)
+			r.Delete("/api/medicines/{id}", medH.Delete)
+			r.Post("/api/sync", syncH.Sync)
+
+			r.Get("/api/households/current", hhH.GetCurrent)
+			r.Post("/api/households/join", hhH.Join)
+			r.Post("/api/households/{id}/invite", hhH.CreateInvite)
+			r.Delete("/api/households/{id}/members/{user_id}", hhH.RemoveMember)
+		})
 	})
 
 	srv := httptest.NewServer(r)

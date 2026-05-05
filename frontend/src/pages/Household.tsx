@@ -10,7 +10,8 @@ import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import type { HouseholdDetail, Invite } from "../types";
+import { Skeleton } from "../components/Skeleton";
+import type { HouseholdDetail, Invite, AuditEntry } from "../types";
 
 export default function Household() {
   const { user, refreshHouseholds } = useAuth();
@@ -20,6 +21,8 @@ export default function Household() {
 
   const [detail, setDetail] = useState<HouseholdDetail | null>(null);
   const [invites, setInvites] = useState<Invite[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [auditOpen, setAuditOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [editingName, setEditingName] = useState(false);
@@ -33,33 +36,36 @@ export default function Household() {
   const [transferTarget, setTransferTarget] = useState<{ id: string; name: string } | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
 
+  // Single load path used by both the initial render and post-action
+  // refresh. Sequential because the invites endpoint needs the household
+  // id; the previous "fetch in parallel with detail?.id ?? ''" issued a
+  // malformed request whenever detail wasn't loaded yet.
   const reload = useCallback(async () => {
     setLoading(true);
-    const [cur, inv] = await Promise.all([
-      apiClient.get<HouseholdDetail>("/api/households/current"),
-      apiClient.get<Invite[]>(`/api/households/${detail?.id ?? ""}/invites`),
-    ]);
-    if (cur.data) setDetail(cur.data);
+    const cur = await apiClient.get<HouseholdDetail>("/api/households/current");
+    if (cur.data) {
+      setDetail(cur.data);
+      const inv = await apiClient.get<Invite[]>(`/api/households/${cur.data.id}/invites`);
+      if (inv.data) setInvites(inv.data);
+      // Audit list is fetched alongside but the section stays collapsed by
+      // default — most users won't open it.
+      const aud = await apiClient.get<AuditEntry[]>(
+        `/api/households/${cur.data.id}/audit?limit=50`
+      );
+      if (aud.data) setAudit(aud.data);
+    } else if (cur.error) {
+      toast.error(cur.error.message);
+    }
     setLoading(false);
-    if (inv.data) setInvites(inv.data);
-  }, [detail?.id]);
+  }, [toast]);
 
-  // Initial load. Don't depend on detail.id (would create a loop).
   useEffect(() => {
-    apiClient.get<HouseholdDetail>("/api/households/current").then((res) => {
-      if (res.data) {
-        setDetail(res.data);
-        // Now fetch invites with the correct id.
-        apiClient.get<Invite[]>(`/api/households/${res.data.id}/invites`).then((iRes) => {
-          if (iRes.data) setInvites(iRes.data);
-        });
-      } else if (res.error) {
-        toast.error(res.error.message);
-      }
-      setLoading(false);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // reload() flips loading to true synchronously before awaiting the
+    // network call. That's exactly the "fetch + show spinner" pattern;
+    // the lint warning here is a false positive for this shape.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void reload();
+  }, [reload]);
 
   const isOwner = detail?.members.find((m) => m.user_id === user?.id)?.role === "owner";
   const otherMembers = detail?.members.filter((m) => m.user_id !== user?.id) ?? [];
@@ -180,9 +186,9 @@ export default function Household() {
 
   if (loading) {
     return (
-      <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginTop: "2rem" }}>
-        {t("common.loading")}
-      </p>
+      <div style={{ padding: "1rem" }}>
+        <Skeleton count={3} height={72} />
+      </div>
     );
   }
 
@@ -352,6 +358,72 @@ export default function Household() {
       )}
 
       <section style={card}>
+        <button
+          onClick={() => setAuditOpen((v) => !v)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+            background: "transparent",
+            border: "none",
+            color: "var(--color-text)",
+            padding: 0,
+            cursor: "pointer",
+          }}
+          aria-expanded={auditOpen}
+        >
+          <h3 style={cardTitle}>
+            {t("household.activity_title")} · {audit.length}
+          </h3>
+          <Icon
+            name="chevron-down"
+            size={18}
+            style={{
+              transform: auditOpen ? "rotate(180deg)" : "none",
+              transition: "transform 120ms",
+            }}
+          />
+        </button>
+        {auditOpen && (
+          <ul style={{ listStyle: "none", marginTop: "0.75rem" }}>
+            {audit.length === 0 && (
+              <li style={{ color: "var(--color-text-muted)", fontSize: "0.85rem" }}>
+                {t("household.activity_empty")}
+              </li>
+            )}
+            {audit.map((e) => (
+              <li key={e.id} style={auditRow}>
+                <div>
+                  <strong>{e.username}</strong>{" "}
+                  <span style={{ color: "var(--color-text-muted)" }}>
+                    {t(`household.audit.${e.action}`, {
+                      defaultValue: e.action,
+                      target: e.target_name ?? "",
+                    })}
+                  </span>
+                  {e.target_name && (
+                    <span style={{ marginLeft: "0.4rem" }}>
+                      <em>{e.target_name}</em>
+                    </span>
+                  )}
+                </div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--color-text-muted)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {new Date(e.at).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section style={card}>
         <h3 style={cardTitle}>{t("household.leave_title")}</h3>
         <p style={cardDesc}>{t("household.leave_description")}</p>
         <Button
@@ -487,7 +559,7 @@ const memberRow: React.CSSProperties = {
 const youBadge: React.CSSProperties = {
   marginLeft: "0.5rem",
   fontSize: "0.7rem",
-  background: "var(--color-accent)",
+  background: "var(--color-primary)",
   color: "#fff",
   padding: "0.1rem 0.4rem",
   borderRadius: 4,
@@ -524,6 +596,15 @@ const qrFrame: React.CSSProperties = {
   marginTop: "0.5rem",
   padding: "0.75rem",
   borderRadius: "var(--radius)",
+};
+const auditRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "0.5rem",
+  padding: "0.5rem 0",
+  borderBottom: "1px solid var(--color-border)",
+  fontSize: "0.85rem",
 };
 const inviteRow: React.CSSProperties = {
   display: "flex",

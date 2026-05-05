@@ -20,9 +20,10 @@ import { Icon } from "../components/Icon";
 import { useToast } from "../contexts/ToastContext";
 import { Link } from "react-router-dom";
 import type { LocalMedicine } from "../types";
+import { Skeleton } from "../components/Skeleton";
+import { DEFAULT_LOW_STOCK } from "../constants";
 
 const SORT_META_KEY = "medicines_sort";
-const DEFAULT_LOW_STOCK = 3;
 
 export default function Medicines() {
   const [search, setSearch] = useState("");
@@ -50,7 +51,9 @@ export default function Medicines() {
 
   function changeSort(key: SortKey) {
     setSortKey(key);
-    setMeta(SORT_META_KEY, key);
+    // Fire-and-forget is intentional here: the UI shouldn't wait on
+    // IndexedDB to render the new sort. void marks intent for the linter.
+    void setMeta(SORT_META_KEY, key);
   }
 
   const fuse = useMemo(
@@ -77,6 +80,19 @@ export default function Medicines() {
     if (search.trim()) return fuse!.search(search).map((r) => r.item);
     return [...medicines].sort(comparator(sortKey));
   }, [fuse, medicines, search, sortKey]);
+
+  // Names that appear on more than one card after filtering — used to
+  // surface a fallback subtitle so duplicates aren't visually identical
+  // when category is empty.
+  const ambiguousNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of filtered) counts.set(m.name, (counts.get(m.name) ?? 0) + 1);
+    return new Set([...counts].filter(([, c]) => c > 1).map(([n]) => n));
+  }, [filtered]);
+
+  // Stable wall-clock reference for staleness checks in cards. Captured
+  // once per render in the parent so MedicineCard's render stays pure.
+  const [now] = useState(() => Date.now());
 
   async function handleAdjust(id: string, delta: number) {
     const newQty = await adjustQuantity(id, delta);
@@ -111,9 +127,9 @@ export default function Medicines() {
       )}
 
       {medicines === undefined && (
-        <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginTop: "2rem" }}>
-          {t("medicines.loading")}
-        </p>
+        <div style={{ padding: "0 1rem", marginTop: "0.5rem" }}>
+          <Skeleton count={4} height={88} />
+        </div>
       )}
 
       {medicines !== undefined && medicines.length === 0 && (
@@ -139,7 +155,7 @@ export default function Medicines() {
         />
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      <div className="grid-cards-lg">
         {filtered.map((m) => (
           <MedicineCard
             key={m.id}
@@ -147,6 +163,8 @@ export default function Medicines() {
             onAdjust={(delta) => handleAdjust(m.id, delta)}
             onDelete={() => handleDelete(m.id, m.name)}
             lowStockThreshold={lowStockThreshold}
+            isAmbiguous={ambiguousNames.has(m.name)}
+            now={now}
           />
         ))}
       </div>

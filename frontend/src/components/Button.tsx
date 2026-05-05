@@ -53,7 +53,7 @@ const sizes: Record<Size, React.CSSProperties> = {
 };
 
 const variants: Record<Variant, React.CSSProperties> = {
-  primary: { background: "var(--color-accent)", color: "#fff" },
+  primary: { background: "var(--color-primary)", color: "#fff" },
   secondary: {
     background: "var(--color-surface-2)",
     color: "var(--color-text)",
@@ -61,8 +61,8 @@ const variants: Record<Variant, React.CSSProperties> = {
   },
   danger: {
     background: "transparent",
-    color: "var(--color-error)",
-    borderColor: "var(--color-error)",
+    color: "var(--color-destructive)",
+    borderColor: "var(--color-destructive)",
   },
   ghost: { background: "transparent", color: "var(--color-text-muted)" },
 };

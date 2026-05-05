@@ -1,6 +1,10 @@
 import type { ApiResponse } from "../types";
 import { getMeta, setMeta } from "./db";
 
+// Per-request timeout. Long enough to absorb a slow self-hosted SQLite
+// commit, short enough that a wedged server doesn't hang the UI forever.
+const REQUEST_TIMEOUT_MS = 15_000;
+
 /**
  * API client for communicating with the optional MedVault server.
  * This is ONLY used when a server is connected. In standalone mode,
@@ -9,6 +13,10 @@ import { getMeta, setMeta } from "./db";
 class ApiClient {
   private baseUrl: string = "";
   private accessToken: string | null = null;
+  // Single in-flight refresh promise. Two parallel 401 responses share it
+  // instead of each issuing their own refresh — rotation would otherwise
+  // invalidate the first refresh's token before its retry could use it.
+  private refreshing: Promise<boolean> | null = null;
 
   setBaseUrl(url: string): void {
     this.baseUrl = url;
@@ -16,6 +24,17 @@ class ApiClient {
 
   setAccessToken(token: string | null): void {
     this.accessToken = token;
+  }
+
+  // Read-only accessors used by sibling services (photos.ts) that need to
+  // build their own non-JSON requests (multipart upload, raw blob fetch)
+  // while still going through the same auth token + base URL.
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  getAccessToken(): string | null {
+    return this.accessToken;
   }
 
   async request<T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
@@ -31,11 +50,20 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
 
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // Network failure, timeout, abort — present as a structured envelope
+      // so callers don't have to wrap every request in try/catch.
+      const message = err instanceof Error ? err.message : String(err);
+      return { data: null, error: { code: "NETWORK", message } };
+    }
 
     // Handle 401 — try refresh
     if (response.status === 401 && path !== "/api/auth/refresh") {
@@ -50,7 +78,18 @@ class ApiClient {
       };
     }
 
-    return response.json();
+    // Defensive parse: a misconfigured upstream (nginx default page,
+    // captive portal, gateway HTML) would otherwise throw inside json()
+    // and propagate, breaking every caller's "always returns envelope"
+    // assumption. Synthesize a NETWORK envelope instead.
+    try {
+      return (await response.json()) as ApiResponse<T>;
+    } catch {
+      return {
+        data: null,
+        error: { code: "NETWORK", message: `unexpected response (status ${response.status})` },
+      };
+    }
   }
 
   async get<T>(path: string): Promise<ApiResponse<T>> {
@@ -73,7 +112,18 @@ class ApiClient {
     return this.request<T>("DELETE", path);
   }
 
-  private async tryRefresh(): Promise<boolean> {
+  private tryRefresh(): Promise<boolean> {
+    // Reuse any refresh already in flight so concurrent 401s don't each
+    // burn their own refresh token (rotation would invalidate them).
+    if (!this.refreshing) {
+      this.refreshing = this.doRefresh().finally(() => {
+        this.refreshing = null;
+      });
+    }
+    return this.refreshing;
+  }
+
+  private async doRefresh(): Promise<boolean> {
     try {
       const refreshToken = await getMeta("refresh_token");
       if (!refreshToken) return false;
@@ -82,6 +132,7 @@ class ApiClient {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: refreshToken }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
 
       if (!response.ok) return false;

@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -35,13 +36,12 @@ func (h *SettingsHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		userID,
 	).Scan(&alertDaysJSON, &notifMethod, &defaultCat)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		api.WriteJSON(w, http.StatusOK, defaultSettings)
 		return
 	}
 	if err != nil {
-		slog.Error("GetSettings: query", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "GetSettings: query", err)
 		return
 	}
 
@@ -76,8 +76,7 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 
 	alertDaysJSON, err := json.Marshal(req.AlertDays)
 	if err != nil {
-		slog.Error("UpdateSettings: marshal alert_days", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "UpdateSettings: marshal alert_days", err)
 		return
 	}
 
@@ -93,8 +92,7 @@ func (h *SettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request)
 		time.Now().UTC(),
 	)
 	if err != nil {
-		slog.Error("UpdateSettings: upsert", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "UpdateSettings: upsert", err)
 		return
 	}
 

@@ -34,6 +34,12 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Content-Security-Policy", csp)
+		// HSTS only over HTTPS — sending it on a plaintext response is
+		// ignored by browsers but also pointless. r.TLS covers direct TLS;
+		// X-Forwarded-Proto covers the documented reverse-proxy setup.
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

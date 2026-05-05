@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 )
@@ -38,13 +39,21 @@ func Logging(next http.Handler) http.Handler {
 
 		next.ServeHTTP(rec, r)
 
+		// Strip the ephemeral source port so 1.2.3.4:55001 and 1.2.3.4:55002
+		// share the same log key — matches the grouping the rate limiter uses.
+		remote := r.RemoteAddr
+		if host, _, err := net.SplitHostPort(remote); err == nil {
+			remote = host
+		}
+
 		slog.Info("request",
+			"req_id", RequestIDFrom(r.Context()),
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
 			"bytes", rec.bytes,
 			"duration_ms", time.Since(start).Milliseconds(),
-			"remote", r.RemoteAddr,
+			"remote", remote,
 		)
 	})
 }

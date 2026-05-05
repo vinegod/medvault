@@ -2,6 +2,10 @@ import { db, getMeta, setMeta, deleteMeta, getPendingChanges } from "./db";
 import { apiClient } from "./api";
 import type { Medicine, SyncResponse } from "../types";
 
+// Tunables. Pulled out so the cadence is reviewable in one place.
+const SYNC_DEBOUNCE_MS = 5_000;
+const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+
 // rebuildLocalCacheFromServer wipes the local medicine cache and forces a
 // full re-sync. Used by Join and Switch household flows — both swap the
 // server-side scope (household_id) and the cache becomes meaningless.
@@ -9,6 +13,12 @@ export async function rebuildLocalCacheFromServer(): Promise<void> {
   await db.medicines.clear();
   await deleteMeta("last_sync");
   await performSync();
+}
+
+let onSyncError: ((err: Error) => void) | null = null;
+
+export function setSyncErrorHandler(fn: (err: Error) => void): void {
+  onSyncError = fn;
 }
 
 let syncInProgress = false;
@@ -22,7 +32,7 @@ let listenersActive = false;
 export function scheduleSyncAfterWrite(): void {
   if (!listenersActive) return; // No server connected
   if (debounceTimer) clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => performSync(), 5000);
+  debounceTimer = setTimeout(() => performSync(), SYNC_DEBOUNCE_MS);
 }
 
 // Main sync function — safe to call anytime; no-ops if not connected
@@ -37,6 +47,10 @@ export async function performSync(): Promise<void> {
   try {
     const lastSync = await getMeta("last_sync");
     const pendingChanges = await getPendingChanges();
+    // Snapshot the IDs we're about to send. Anything that becomes pending
+    // *after* this point (a user edit during the network round-trip) must
+    // not be flipped to "synced" — it hasn't actually been sent yet.
+    const sentIds = pendingChanges.map((m) => m.id);
 
     // Strip client-only fields before sending
     const changes: Medicine[] = pendingChanges.map(({ sync_status: _, ...medicine }) => medicine);
@@ -62,14 +76,20 @@ export async function performSync(): Promise<void> {
       }
     });
 
-    // Mark all pending as synced
-    await db.medicines.where("sync_status").equals("pending").modify({ sync_status: "synced" });
+    // Only flip the IDs we actually sent. Records that became pending
+    // mid-round-trip stay pending so the next sync picks them up.
+    if (sentIds.length > 0) {
+      await db.medicines
+        .where("id")
+        .anyOf(sentIds)
+        .filter((m) => m.sync_status === "pending")
+        .modify({ sync_status: "synced" });
+    }
 
-    // Update last sync timestamp
     await setMeta("last_sync", response.data.server_time);
   } catch (error) {
     console.error("Sync failed:", error);
-    // Will retry on next trigger — app continues working normally
+    onSyncError?.(error instanceof Error ? error : new Error(String(error)));
   } finally {
     syncInProgress = false;
   }
@@ -91,8 +111,7 @@ export function initSyncListeners(): void {
   window.addEventListener("online", onOnline);
   document.addEventListener("visibilitychange", onVisible);
 
-  // Periodic sync every 5 minutes
-  syncTimer = setInterval(() => performSync(), 5 * 60 * 1000);
+  syncTimer = setInterval(() => performSync(), SYNC_INTERVAL_MS);
 
   listenersActive = true;
 

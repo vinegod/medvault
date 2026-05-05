@@ -32,7 +32,10 @@
     "hours_ago_one": "{{count}}h ago",
     "hours_ago_other": "{{count}}h ago",
     "days_ago_one": "{{count}}d ago",
-    "days_ago_other": "{{count}}d ago"
+    "days_ago_other": "{{count}}d ago",
+    "error_failed": "Sync failed — changes will retry automatically",
+    "pending_count_one": "{{count}} pending",
+    "pending_count_other": "{{count}} pending"
   },
   "search": {
     "placeholder": "Search…",
@@ -71,7 +74,8 @@
     "expired_ago": "Expired {{days}}d ago",
     "expires_today": "Expires today",
     "expires_in": "Expires in {{days}}d",
-    "expires_on": "Expires {{date}}"
+    "expires_on": "Expires {{date}}",
+    "restock": "Restock?"
   },
   "medicines": {
     "loading": "Loading…",
@@ -89,7 +93,13 @@
     "expired": "Expired",
     "expiring_30": "Expiring within 30 days",
     "expiring_90": "Expiring within 90 days",
-    "low_stock": "Running low"
+    "low_stock": "Running low",
+    "export_shopping_list": "Export shopping list",
+    "shopping_list_title": "MedVault shopping list",
+    "shopping_list_replace": "Replace:",
+    "shopping_list_restock": "Restock:",
+    "shopping_list_copied": "Shopping list copied to clipboard.",
+    "shopping_list_failed": "Couldn't copy. Try long-pressing to copy manually."
   },
   "auth": {
     "title": "MedVault",
@@ -106,10 +116,14 @@
     "continue_without": "Continue without server →",
     "welcome_back": "Welcome back, {{username}}.",
     "connection_failed": "Connection failed.",
+    "server_unreachable": "Server not reachable or not a MedVault server.",
     "account_created": "Account created!",
     "registration_failed": "Registration failed.",
     "username_hint": "3–30 characters: letters, digits, underscore.",
-    "password_hint": "At least 8 characters."
+    "password_hint": "At least 8 characters.",
+    "invalid_url": "Enter a valid URL starting with http:// or https://",
+    "password_min": "At least 8 characters",
+    "password_ok": "Password length looks good"
   },
   "medicine_form": {
     "name": "Name",
@@ -130,9 +144,28 @@
     "save_failed": "Failed to save. Please try again.",
     "saving": "Saving…",
     "updated": "Updated {{name}}.",
-    "added": "Added {{name}}."
+    "added": "Added {{name}}.",
+    "suggestions_loading": "Searching…",
+    "suggestions_none": "No matches",
+    "notes_counter": "{{count}} / 500",
+    "show_more": "Show more results",
+    "opened_at": "Opened on",
+    "days_after_opening": "Use within (days after opening)",
+    "days_after_opening_placeholder": "e.g. 28",
+    "photo": "Photo",
+    "photo_alt": "Medicine photo",
+    "photo_attach": "Attach photo",
+    "photo_replace": "Replace photo",
+    "photo_remove": "Remove photo",
+    "photo_uploaded": "Photo saved.",
+    "photo_removed": "Photo removed.",
+    "photo_failed": "Couldn't save photo.",
+    "save_before_photo": "Save the medicine first, then add a photo."
   },
   "settings": {
+    "group_account": "Account",
+    "group_data": "Data",
+    "group_preferences": "Preferences",
     "server_title": "Server",
     "connected_as": "Connected as",
     "error_reconnect": "Couldn't reconnect. Log in again to sync your data.",
@@ -146,6 +179,19 @@
     "password_failed": "Couldn't change password. Check your current password.",
     "backup_title": "Backup",
     "backup_description": "Export all medicines to a JSON file, or restore from a previous export.",
+    "backup_encrypt": "Encrypt with passphrase",
+    "passphrase_placeholder": "Passphrase (8+ characters)",
+    "passphrase_too_short": "Passphrase must be at least 8 characters.",
+    "import_passphrase_prompt": "Enter the passphrase used when this backup was exported:",
+    "import_decrypt_failed": "Couldn't decrypt — wrong passphrase or corrupt file.",
+    "notifications_title": "Expiration notifications",
+    "notifications_description": "Get a daily reminder when medicines are about to expire. Works without any data leaving your device.",
+    "notifications_enable": "Enable notifications",
+    "notifications_disable": "Disable notifications",
+    "notifications_enabled": "Notifications enabled.",
+    "notifications_disabled": "Notifications disabled.",
+    "notifications_blocked": "Notifications are blocked. Allow them in your browser settings, then try again.",
+    "notifications_browser_blocked": "Your browser is blocking notifications for this site.",
     "pwa_title": "Install app",
     "pwa_description": "Add MedVault to your home screen for faster access and a native feel.",
     "appearance_title": "Appearance",
@@ -210,7 +256,18 @@
     "leave_confirm_title": "Leave this household?",
     "leave_confirm_description": "Your local copy of this household's medicines will be cleared. This cannot be undone.",
     "leave_transfer_required": "You're the only owner — transfer ownership before leaving.",
-    "left": "You've left the household."
+    "left": "You've left the household.",
+    "activity_title": "Activity",
+    "activity_empty": "No activity yet.",
+    "audit": {
+      "medicine.create": "added {{target}}",
+      "medicine.update": "updated {{target}}",
+      "medicine.delete": "removed {{target}}",
+      "household.rename": "renamed the household to {{target}}",
+      "household.member.add": "joined the household",
+      "household.member.remove": "removed {{target}}",
+      "household.transfer": "transferred ownership to {{target}}"
+    }
   },
   "household_switcher": {
     "title": "Switch household",
@@ -265,5 +322,10 @@
   "confirm_dialog": {
     "confirm": "Confirm",
     "cancel": "Cancel"
+  },
+  "not_found": {
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist.",
+    "go_home": "Go to medicines"
   }
 }

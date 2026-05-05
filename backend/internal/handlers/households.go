@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -55,8 +56,7 @@ func (h *HouseholdHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("GetCurrent: query household", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "GetCurrent: query household", err)
 		return
 	}
 
@@ -69,8 +69,7 @@ func (h *HouseholdHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 		householdID,
 	)
 	if err != nil {
-		slog.Error("GetCurrent: query members", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "GetCurrent: query members", err)
 		return
 	}
 	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
@@ -79,15 +78,13 @@ func (h *HouseholdHandler) GetCurrent(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var mv models.MemberView
 		if err := rows.Scan(&mv.UserID, &mv.Username, &mv.Role, &mv.JoinedAt); err != nil {
-			slog.Error("GetCurrent: scan member", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+			api.ServerError(w, "GetCurrent: scan member", err)
 			return
 		}
 		detail.Members = append(detail.Members, mv)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("GetCurrent: rows error", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "GetCurrent: rows error", err)
 		return
 	}
 
@@ -113,22 +110,36 @@ func (h *HouseholdHandler) CreateInvite(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	code, err := generateInviteCode()
-	if err != nil {
-		slog.Error("CreateInvite: generate code", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
-		return
-	}
-
 	now := time.Now().UTC()
 	expiresAt := now.Add(7 * 24 * time.Hour)
-	_, err = h.DB.ExecContext(r.Context(),
-		`INSERT INTO household_invites (code, household_id, invited_by, expires_at, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		code, householdID, callerID, expiresAt, now,
-	)
-	if err != nil {
-		slog.Error("CreateInvite: insert invite", "err", err)
+
+	// Retry on PK collision. With a 32^8 keyspace this is theoretical, but
+	// when it happens the user shouldn't see a 500 — try a fresh code first.
+	var code string
+	for attempt := 0; attempt < 3; attempt++ {
+		c, err := generateInviteCode()
+		if err != nil {
+			api.ServerError(w, "CreateInvite: generate code", err)
+			return
+		}
+		_, err = h.DB.ExecContext(r.Context(),
+			`INSERT INTO household_invites (code, household_id, invited_by, expires_at, created_at)
+			 VALUES (?, ?, ?, ?, ?)`,
+			c, householdID, callerID, expiresAt, now,
+		)
+		if err == nil {
+			code = c
+			break
+		}
+		// Anything other than a unique-constraint violation is a real error.
+		if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			api.ServerError(w, "CreateInvite: insert invite", err)
+			return
+		}
+		slog.Warn("CreateInvite: code collision, retrying", "attempt", attempt+1)
+	}
+	if code == "" {
+		slog.Error("CreateInvite: exhausted retries")
 		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
 		return
 	}
@@ -175,8 +186,7 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("Join: query invite", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Join: query invite", err)
 		return
 	}
 
@@ -186,8 +196,7 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		`SELECT COUNT(*) FROM memberships WHERE user_id = ? AND household_id = ?`,
 		callerID, invite.HouseholdID,
 	).Scan(&existing); err != nil {
-		slog.Error("Join: check existing membership", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Join: check existing membership", err)
 		return
 	}
 	if existing > 0 {
@@ -199,8 +208,7 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		slog.Error("Join: begin tx", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Join: begin tx", err)
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
@@ -210,8 +218,7 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		 VALUES (?, ?, ?, ?)`,
 		callerID, invite.HouseholdID, models.RoleMember, now,
 	); err != nil {
-		slog.Error("Join: insert membership", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Join: insert membership", err)
 		return
 	}
 
@@ -219,8 +226,7 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		`UPDATE household_invites SET used_at = ?, used_by = ? WHERE code = ?`,
 		now, callerID, invite.Code,
 	); err != nil {
-		slog.Error("Join: mark invite used", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Join: mark invite used", err)
 		return
 	}
 
@@ -231,16 +237,20 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET active_household_id = ? WHERE id = ?`,
 		invite.HouseholdID, callerID,
 	); err != nil {
-		slog.Error("Join: set active household", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Join: set active household", err)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		slog.Error("Join: commit", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Join: commit", err)
 		return
 	}
+
+	// Audit outside the tx — the join already succeeded; an audit-write
+	// failure shouldn't unwind it.
+	username := middleware.UsernameFrom(r.Context())
+	WriteAudit(r.Context(), h.DB, invite.HouseholdID, callerID, username,
+		"household.member.add", "user", &callerID, &username)
 
 	api.WriteJSON(w, http.StatusOK, map[string]string{
 		"household_id": invite.HouseholdID,
@@ -269,13 +279,18 @@ func (h *HouseholdHandler) RemoveMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Capture the username before deleting so the audit row stays readable.
+	var targetUsername string
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT username FROM users WHERE id = ?`, targetID,
+	).Scan(&targetUsername)
+
 	res, err := h.DB.ExecContext(r.Context(),
 		`DELETE FROM memberships WHERE user_id = ? AND household_id = ?`,
 		targetID, householdID,
 	)
 	if err != nil {
-		slog.Error("RemoveMember: delete", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "RemoveMember: delete", err)
 		return
 	}
 
@@ -284,6 +299,10 @@ func (h *HouseholdHandler) RemoveMember(w http.ResponseWriter, r *http.Request) 
 		api.WriteError(w, http.StatusNotFound, models.CodeNotFound, "member not found in this household")
 		return
 	}
+
+	WriteAudit(r.Context(), h.DB, householdID, callerID,
+		middleware.UsernameFrom(r.Context()),
+		"household.member.remove", "user", &targetID, &targetUsername)
 
 	api.WriteJSON(w, http.StatusOK, nil)
 }
@@ -306,8 +325,7 @@ func (h *HouseholdHandler) List(w http.ResponseWriter, r *http.Request) {
 		userID,
 	)
 	if err != nil {
-		slog.Error("List: query memberships", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "List: query memberships", err)
 		return
 	}
 	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
@@ -316,15 +334,13 @@ func (h *HouseholdHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s models.MembershipSummary
 		if err := rows.Scan(&s.ID, &s.Name, &s.Role, &s.JoinedAt, &s.IsActive); err != nil {
-			slog.Error("List: scan", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+			api.ServerError(w, "List: scan", err)
 			return
 		}
 		out = append(out, s)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("List: rows", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "List: rows", err)
 		return
 	}
 
@@ -356,8 +372,7 @@ func (h *HouseholdHandler) Switch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("Switch: check membership", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Switch: check membership", err)
 		return
 	}
 
@@ -365,8 +380,7 @@ func (h *HouseholdHandler) Switch(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET active_household_id = ? WHERE id = ?`,
 		req.HouseholdID, userID,
 	); err != nil {
-		slog.Error("Switch: update active", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Switch: update active", err)
 		return
 	}
 
@@ -397,8 +411,7 @@ func (h *HouseholdHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		slog.Error("Create: begin tx", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Create: begin tx", err)
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
@@ -408,8 +421,7 @@ func (h *HouseholdHandler) Create(w http.ResponseWriter, r *http.Request) {
 		 VALUES (?, ?, ?, ?, ?)`,
 		householdID, req.Name, userID, now, now,
 	); err != nil {
-		slog.Error("Create: insert household", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Create: insert household", err)
 		return
 	}
 
@@ -418,8 +430,7 @@ func (h *HouseholdHandler) Create(w http.ResponseWriter, r *http.Request) {
 		 VALUES (?, ?, ?, ?)`,
 		userID, householdID, models.RoleOwner, now,
 	); err != nil {
-		slog.Error("Create: insert membership", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Create: insert membership", err)
 		return
 	}
 
@@ -427,14 +438,12 @@ func (h *HouseholdHandler) Create(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET active_household_id = ? WHERE id = ?`,
 		householdID, userID,
 	); err != nil {
-		slog.Error("Create: set active", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Create: set active", err)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		slog.Error("Create: commit", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Create: commit", err)
 		return
 	}
 
@@ -477,10 +486,14 @@ func (h *HouseholdHandler) Rename(w http.ResponseWriter, r *http.Request) {
 		`UPDATE households SET name = ?, updated_at = ? WHERE id = ?`,
 		req.Name, now, householdID,
 	); err != nil {
-		slog.Error("Rename: update", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Rename: update", err)
 		return
 	}
+
+	WriteAudit(r.Context(), h.DB, householdID,
+		middleware.UserIDFrom(r.Context()),
+		middleware.UsernameFrom(r.Context()),
+		"household.rename", "household", &householdID, &req.Name)
 
 	api.WriteJSON(w, http.StatusOK, map[string]any{
 		"id":         householdID,
@@ -503,8 +516,7 @@ func (h *HouseholdHandler) Leave(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		slog.Error("Leave: begin tx", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Leave: begin tx", err)
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
@@ -520,20 +532,21 @@ func (h *HouseholdHandler) Leave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		slog.Error("Leave: check membership", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Leave: check membership", err)
 		return
 	}
 
 	var totalMembers, totalOwners int
+	// COALESCE: SUM over zero rows returns NULL, which would fail to scan
+	// into an int. Cascade rules make this unreachable today, but defending
+	// against a NULL is a one-word change.
 	if err := tx.QueryRowContext(r.Context(),
 		`SELECT COUNT(*),
-		        SUM(CASE WHEN role = ? THEN 1 ELSE 0 END)
+		        COALESCE(SUM(CASE WHEN role = ? THEN 1 ELSE 0 END), 0)
 		   FROM memberships WHERE household_id = ?`,
 		models.RoleOwner, paramID,
 	).Scan(&totalMembers, &totalOwners); err != nil {
-		slog.Error("Leave: count members", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Leave: count members", err)
 		return
 	}
 
@@ -550,8 +563,7 @@ func (h *HouseholdHandler) Leave(w http.ResponseWriter, r *http.Request) {
 		if _, err := tx.ExecContext(r.Context(),
 			`DELETE FROM households WHERE id = ?`, paramID,
 		); err != nil {
-			slog.Error("Leave: delete household", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+			api.ServerError(w, "Leave: delete household", err)
 			return
 		}
 	} else {
@@ -559,8 +571,7 @@ func (h *HouseholdHandler) Leave(w http.ResponseWriter, r *http.Request) {
 			`DELETE FROM memberships WHERE user_id = ? AND household_id = ?`,
 			userID, paramID,
 		); err != nil {
-			slog.Error("Leave: delete membership", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+			api.ServerError(w, "Leave: delete membership", err)
 			return
 		}
 		// Membership delete doesn't trigger the FK ON DELETE on
@@ -571,15 +582,13 @@ func (h *HouseholdHandler) Leave(w http.ResponseWriter, r *http.Request) {
 			  WHERE id = ? AND active_household_id = ?`,
 			userID, paramID,
 		); err != nil {
-			slog.Error("Leave: clear active", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+			api.ServerError(w, "Leave: clear active", err)
 			return
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		slog.Error("Leave: commit", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Leave: commit", err)
 		return
 	}
 
@@ -620,8 +629,7 @@ func (h *HouseholdHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		slog.Error("Transfer: begin tx", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Transfer: begin tx", err)
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
@@ -633,8 +641,7 @@ func (h *HouseholdHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 		  WHERE user_id = ? AND household_id = ?`,
 		req.ToUserID, householdID,
 	).Scan(&existing); err != nil {
-		slog.Error("Transfer: check target", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Transfer: check target", err)
 		return
 	}
 	if existing == 0 {
@@ -648,8 +655,7 @@ func (h *HouseholdHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 		  WHERE user_id = ? AND household_id = ?`,
 		models.RoleOwner, req.ToUserID, householdID,
 	); err != nil {
-		slog.Error("Transfer: promote target", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Transfer: promote target", err)
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(),
@@ -657,16 +663,22 @@ func (h *HouseholdHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 		  WHERE user_id = ? AND household_id = ?`,
 		models.RoleMember, callerID, householdID,
 	); err != nil {
-		slog.Error("Transfer: demote caller", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Transfer: demote caller", err)
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		slog.Error("Transfer: commit", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "Transfer: commit", err)
 		return
 	}
+
+	var newOwnerName string
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT username FROM users WHERE id = ?`, req.ToUserID,
+	).Scan(&newOwnerName)
+	WriteAudit(r.Context(), h.DB, householdID, callerID,
+		middleware.UsernameFrom(r.Context()),
+		"household.transfer", "user", &req.ToUserID, &newOwnerName)
 
 	api.WriteJSON(w, http.StatusOK, nil)
 }
@@ -698,8 +710,7 @@ func (h *HouseholdHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 		householdID, time.Now().UTC(),
 	)
 	if err != nil {
-		slog.Error("ListInvites: query", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "ListInvites: query", err)
 		return
 	}
 	defer rows.Close() //nolint:errcheck // error surfaced by rows.Err()
@@ -709,15 +720,13 @@ func (h *HouseholdHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 		var inv models.Invite
 		if err := rows.Scan(&inv.Code, &inv.HouseholdID, &inv.InvitedBy,
 			&inv.ExpiresAt, &inv.CreatedAt); err != nil {
-			slog.Error("ListInvites: scan", "err", err)
-			api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+			api.ServerError(w, "ListInvites: scan", err)
 			return
 		}
 		out = append(out, inv)
 	}
 	if err := rows.Err(); err != nil {
-		slog.Error("ListInvites: rows", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "ListInvites: rows", err)
 		return
 	}
 
@@ -751,8 +760,7 @@ func (h *HouseholdHandler) RevokeInvite(w http.ResponseWriter, r *http.Request) 
 		time.Now().UTC(), code, householdID,
 	)
 	if err != nil {
-		slog.Error("RevokeInvite: update", "err", err)
-		api.WriteError(w, http.StatusInternalServerError, models.CodeInternal, "server error")
+		api.ServerError(w, "RevokeInvite: update", err)
 		return
 	}
 	n, _ := res.RowsAffected()

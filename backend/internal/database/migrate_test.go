@@ -80,8 +80,8 @@ func TestMigrate_FreshInstall(t *testing.T) {
 
 	// Index swap: by-user index removed, by-household added.
 	idx := indexSet(t, db, "medicines")
-	if _, ok := idx["idx_medicines_household_id"]; !ok {
-		t.Error("idx_medicines_household_id missing")
+	if _, ok := idx["idx_medicines_household_updated"]; !ok {
+		t.Error("idx_medicines_household_updated missing")
 	}
 	if _, ok := idx["idx_medicines_user_id"]; ok {
 		t.Error("idx_medicines_user_id should have been dropped by 002")

@@ -51,7 +51,7 @@ const tabStyle: React.CSSProperties = {
 };
 
 const tabActive: React.CSSProperties = {
-  color: "var(--color-accent)",
+  color: "var(--color-primary)",
 };
 
 const tabLabel: React.CSSProperties = { fontSize: "0.7rem", fontWeight: 600 };

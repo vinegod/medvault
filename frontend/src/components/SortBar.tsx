@@ -57,7 +57,7 @@ const pill: React.CSSProperties = {
 };
 
 const pillActive: React.CSSProperties = {
-  background: "var(--color-accent)",
+  background: "var(--color-primary)",
   color: "#fff",
-  borderColor: "var(--color-accent)",
+  borderColor: "var(--color-primary)",
 };

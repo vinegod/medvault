@@ -41,14 +41,18 @@ export function HouseholdSwitcherSheet({ open, onClose }: Props) {
   }
 
   return (
-    <div style={backdrop} onClick={onClose} role="presentation">
-      <div
-        style={sheet}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("household_switcher.title")}
-      >
+    // Close only when the click started AND ended on the backdrop itself.
+    // Without this guard, a drag-select that begins outside the sheet and
+    // releases on the backdrop closes the sheet — surprising on touch and
+    // when copying text.
+    <div
+      style={backdrop}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
+      <div style={sheet} role="dialog" aria-modal="true" aria-label={t("household_switcher.title")}>
         <div style={handle} />
         <h2 style={title}>{t("household_switcher.title")}</h2>
 
@@ -69,7 +73,7 @@ export function HouseholdSwitcherSheet({ open, onClose }: Props) {
                   </div>
                 </div>
                 {h.is_active && (
-                  <Icon name="check" size={18} style={{ color: "var(--color-accent)" }} />
+                  <Icon name="check" size={18} style={{ color: "var(--color-primary)" }} />
                 )}
               </button>
             </li>
@@ -147,7 +151,7 @@ const row: React.CSSProperties = {
   cursor: "pointer",
 };
 const rowActive: React.CSSProperties = {
-  borderColor: "var(--color-accent)",
+  borderColor: "var(--color-primary)",
 };
 const rowName: React.CSSProperties = {
   fontWeight: 600,
