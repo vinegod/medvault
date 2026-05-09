@@ -1,0 +1,150 @@
+import { useState, type FormEvent } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
+import { Button } from "../components/Button";
+import { validateServerUrl } from "../utils/serverUrl";
+
+export default function Login() {
+  const { connect } = useAuth();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const { t } = useTranslation();
+
+  const [serverUrl, setServerUrl] = useState("http://localhost:8080");
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    // Trim username so leading/trailing whitespace doesn't masquerade as
+    // "invalid credentials". Password is left as-typed: a trailing space
+    // there is a real password choice, not user error.
+    const result = await connect(
+      serverUrl.trim().replace(/\/$/, ""),
+      username.trim(),
+      password,
+      false
+    );
+    setLoading(false);
+    if (result.success) {
+      toast.success(t("auth.welcome_back", { username }));
+      navigate("/medicines");
+    } else {
+      toast.error(result.error ?? t("auth.connection_failed"));
+    }
+  }
+
+  return (
+    <div style={page}>
+      <div style={card}>
+        <h1 style={title}>{t("auth.title")}</h1>
+        <p style={subtitle}>{t("auth.login_subtitle")}</p>
+
+        <form onSubmit={handleSubmit} style={form}>
+          <label style={lbl}>
+            {t("auth.server_url")}
+            <input
+              style={{ ...inp, borderColor: urlError ? "var(--color-error)" : undefined }}
+              type="url"
+              value={serverUrl}
+              onChange={(e) => {
+                setServerUrl(e.target.value);
+                setUrlError(null);
+              }}
+              onBlur={(e) => setUrlError(validateServerUrl(e.target.value))}
+              required
+            />
+            {urlError && (
+              <small style={{ color: "var(--color-error)", fontSize: "0.8rem" }}>
+                {t(urlError)}
+              </small>
+            )}
+          </label>
+
+          <label style={lbl}>
+            {t("auth.username")}
+            <input
+              style={inp}
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+              autoFocus
+            />
+          </label>
+
+          <label style={lbl}>
+            {t("auth.password")}
+            <input
+              style={inp}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </label>
+
+          <Button type="submit" disabled={loading} fullWidth size="lg">
+            {loading ? t("auth.connecting") : t("common.log_in")}
+          </Button>
+        </form>
+
+        <div style={footer}>
+          <p>
+            {t("auth.no_account")} <Link to="/register">{t("auth.create_one")}</Link>
+          </p>
+          <p style={{ marginTop: "0.5rem" }}>
+            <Link to="/medicines">{t("auth.continue_without")}</Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const page: React.CSSProperties = {
+  minHeight: "100dvh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "1rem",
+};
+const card: React.CSSProperties = {
+  width: "100%",
+  maxWidth: 420,
+  background: "var(--color-surface)",
+  borderRadius: "var(--radius-lg)",
+  padding: "2rem",
+  border: "1px solid var(--color-border)",
+};
+const title: React.CSSProperties = { fontSize: "1.8rem", marginBottom: "0.25rem" };
+const subtitle: React.CSSProperties = { color: "var(--color-text-muted)", marginBottom: "1.5rem" };
+const form: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "1rem" };
+const lbl: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.4rem",
+  fontSize: "0.85rem",
+  color: "var(--color-text-muted)",
+};
+const inp: React.CSSProperties = {
+  background: "var(--color-bg)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius)",
+  padding: "0.7rem 0.85rem",
+  color: "var(--color-text)",
+  fontSize: "1rem",
+};
+const footer: React.CSSProperties = {
+  marginTop: "1.5rem",
+  fontSize: "0.9rem",
+  color: "var(--color-text-muted)",
+  textAlign: "center",
+};

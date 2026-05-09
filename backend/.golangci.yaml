@@ -1,0 +1,115 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+  allow-parallel-runners: true
+  allow-serial-runners: true
+
+linters:
+  enable:
+    # Default / Standard
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    # Error handling
+    - wrapcheck
+    - errorlint
+    - nilerr
+
+    # Security
+    - gosec
+    - bidichk
+
+    # Formatting & Style
+    - misspell
+    - whitespace
+    - nolintlint
+    - godot
+
+    # Complexity & Design
+    - gocyclo
+    - gocritic
+    - nakedret
+    - exhaustive
+    - nestif
+    - unparam
+    - reassign
+
+    # Context
+    - contextcheck
+
+    # Performance
+    - prealloc
+    - gocognit
+  settings:
+    gocyclo:
+      min-complexity: 15
+
+    gocognit:
+      min-complexity: 20
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+
+    gosec:
+      severity: medium
+      confidence: medium
+
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Join(
+        - errors.Unwrap(
+
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+
+    godot:
+      scope: declarations
+      capital: false
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+    - golines
+
+  settings:
+    golines:
+      max-len: 120
+      tab-len: 4
+      shorten-comments: false
+      reformat-tags: true
+      chain-split-dots: true
+
+    goimports:
+      local-prefixes: [github.com/vinegod/medvault]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
