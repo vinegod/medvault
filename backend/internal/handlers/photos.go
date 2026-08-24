@@ -59,6 +59,7 @@ func (h *PhotoHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, photoMaxBytes)
+	//nolint:gosec // G120: body already bounded by MaxBytesReader above
 	if err := r.ParseMultipartForm(photoMaxBytes); err != nil {
 		api.WriteError(w, http.StatusBadRequest, models.CodeValidation,
 			"invalid form or photo too large (max 5 MB)")

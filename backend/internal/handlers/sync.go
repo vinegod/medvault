@@ -282,9 +282,11 @@ func (h *SyncHandler) queryRecords(r *http.Request, householdID string, lastSync
 			householdID,
 		)
 	} else {
+		layout := "2006-01-02T15:04:05.000Z"
+		lastSyncTime, _ := time.Parse(layout, *lastSync)
 		rows, err = h.DB.QueryContext(r.Context(),
 			medicineSelectFrom+` WHERE household_id = ? AND updated_at > ?`,
-			householdID, *lastSync,
+			householdID, lastSyncTime,
 		)
 	}
 	if err != nil {
