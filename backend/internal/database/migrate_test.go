@@ -78,10 +78,14 @@ func TestMigrate_FreshInstall(t *testing.T) {
 		t.Error("medicines.user_id should have been renamed to created_by by 002")
 	}
 
-	// Index swap: by-user index removed, by-household added.
+	// Index swap: by-user index removed, by-household added (010 replaces
+	// the (household_id, updated_at) index with (household_id, synced_at)).
 	idx := indexSet(t, db, "medicines")
-	if _, ok := idx["idx_medicines_household_updated"]; !ok {
-		t.Error("idx_medicines_household_updated missing")
+	if _, ok := idx["idx_medicines_household_synced"]; !ok {
+		t.Error("idx_medicines_household_synced missing")
+	}
+	if _, ok := columnSet(t, db, "medicines")["synced_at"]; !ok {
+		t.Error("medicines.synced_at missing — 010 did not apply")
 	}
 	if _, ok := idx["idx_medicines_user_id"]; ok {
 		t.Error("idx_medicines_user_id should have been dropped by 002")
@@ -222,4 +226,65 @@ func indexSet(t *testing.T, db *sql.DB, table string) map[string]struct{} {
 		idx[name] = struct{}{}
 	}
 	return idx
+}
+
+// TestMigrate_AuditRebuildKeepsRows applies migrations up to 011, writes an
+// audit row, then applies 012 and checks the row and new columns exist.
+func TestMigrate_AuditRebuildKeepsRows(t *testing.T) {
+	db := openDB(t)
+	src := migrationsDir(t)
+	staged := t.TempDir()
+
+	stageMigrations(t, src, staged, "011_~")
+	if err := database.Migrate(db, staged); err != nil {
+		t.Fatalf("migrate to 011: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO users (id, username, password_hash) VALUES ('u1', 'alice', 'x');
+		INSERT INTO households (id, name, created_by) VALUES ('h1', 'Home', 'u1');
+		INSERT INTO household_audit (id, household_id, user_id, username, action, target_type)
+		VALUES ('a1', 'h1', 'u1', 'alice', 'household.rename', 'household');`,
+	); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	stageMigrations(t, src, staged, "012_~")
+	if err := database.Migrate(db, staged); err != nil {
+		t.Fatalf("migrate to 012: %v", err)
+	}
+
+	var action string
+	if err := db.QueryRow(`SELECT action FROM household_audit WHERE id = 'a1'`).Scan(&action); err != nil {
+		t.Fatalf("audit row lost in rebuild: %v", err)
+	}
+	cols := columnSet(t, db, "household_audit")
+	for _, want := range []string{"quantity_before", "quantity_after"} {
+		if _, ok := cols[want]; !ok {
+			t.Errorf("household_audit.%s missing after 012", want)
+		}
+	}
+}
+
+// stageMigrations copies the migrations in src whose names sort at or
+// before upTo into dst.
+func stageMigrations(t *testing.T, src, dst, upTo string) {
+	t.Helper()
+	names, err := filepath.Glob(filepath.Join(src, "*.sql"))
+	if err != nil {
+		t.Fatalf("list migrations: %v", err)
+	}
+	for _, path := range names {
+		name := filepath.Base(path)
+		if name > upTo {
+			continue
+		}
+		content, err := os.ReadFile(path) //nolint:gosec // repo migrations dir
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		//nolint:gosec // dst is t.TempDir()
+		if err := os.WriteFile(filepath.Join(dst, name), content, 0o600); err != nil {
+			t.Fatalf("stage %s: %v", name, err)
+		}
+	}
 }

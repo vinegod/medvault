@@ -12,7 +12,7 @@ interface Props {
 // action ("Add medicine"). Never put more than one FAB on a screen.
 export function FAB({ to, label, children }: Props) {
   return (
-    <Link to={to} aria-label={label} style={style}>
+    <Link to={to} aria-label={label} style={style} className="no-print">
       {children}
     </Link>
   );

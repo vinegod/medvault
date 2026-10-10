@@ -2,16 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ApiResponse, DrugSuggestion } from "../types";
 
-// joinDrugNotes is the canonical formatter for the medicine `notes` field
-// when filled from a drug suggestion. Mirrors backend/internal/database/
-// drugdb.go JoinDrugNotes — keep the two in lockstep.
-export function joinDrugNotes(inn?: string | null, pharmaGroup?: string | null): string {
-  const parts: string[] = [];
-  if (inn && inn.trim()) parts.push(inn.trim());
-  if (pharmaGroup && pharmaGroup.trim()) parts.push(pharmaGroup.trim());
-  return parts.join("\n");
-}
-
 interface Props {
   value: string;
   onChange: (v: string) => void;

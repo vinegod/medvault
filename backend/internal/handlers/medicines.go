@@ -27,10 +27,10 @@ func scanMedicine(row interface {
 }, m *models.Medicine,
 ) error {
 	if err := row.Scan(
-		&m.ID, &m.Name, &m.Quantity, &m.Unit, &m.Category,
+		&m.ID, &m.Name, &m.Quantity, &m.Unit, &m.Category, &m.ActiveIngredient,
 		&m.ExpirationDate, &m.OpenedAt, &m.DaysAfterOpening,
 		&m.StorageLocation, &m.Barcode, &m.Notes, &m.PhotoHash,
-		&m.CreatedAt, &m.UpdatedAt, &m.DeletedAt,
+		&m.CreatedAt, &m.UpdatedAt, &m.DeletedAt, &m.DisposedAt,
 	); err != nil {
 		return fmt.Errorf("scan medicine: %w", err)
 	}
@@ -40,10 +40,10 @@ func scanMedicine(row interface {
 // medicineSelectFrom is the standard projection used by every read.
 // Includes the FROM clause so callers just append a WHERE.
 const medicineSelectFrom = `SELECT
-	id, name, quantity, unit, category,
+	id, name, quantity, unit, category, active_ingredient,
 	expiration_date, opened_at, days_after_opening,
 	storage_location, barcode, notes, photo_hash,
-	created_at, updated_at, deleted_at
+	created_at, updated_at, deleted_at, disposed_at
 	FROM medicines`
 
 // List handles GET /api/medicines.
@@ -106,7 +106,7 @@ func (h *MedicineHandler) Create(w http.ResponseWriter, r *http.Request) {
 	householdID := middleware.HouseholdIDFrom(r.Context())
 	callerID := middleware.UserIDFrom(r.Context())
 
-	var req models.CreateMedicineRequest
+	var req models.MedicineRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "invalid JSON")
 		return
@@ -121,15 +121,15 @@ func (h *MedicineHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	_, err := h.DB.ExecContext(r.Context(),
 		`INSERT INTO medicines
-		 (id, household_id, created_by, name, quantity, unit, category,
+		 (id, household_id, created_by, name, quantity, unit, category, active_ingredient,
 		  expiration_date, opened_at, days_after_opening,
-		  storage_location, barcode, notes, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		  storage_location, barcode, notes, created_at, updated_at, synced_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, householdID, callerID,
-		req.Name, req.Quantity, req.Unit, req.Category,
+		req.Name, req.Quantity, req.Unit, req.Category, req.ActiveIngredient,
 		req.ExpirationDate, req.OpenedAt, req.DaysAfterOpening,
 		req.StorageLocation, req.Barcode, req.Notes,
-		now, now,
+		now, now, now,
 	)
 	if err != nil {
 		api.ServerError(w, "Create medicine: insert", err)
@@ -144,9 +144,7 @@ func (h *MedicineHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteAudit(r.Context(), h.DB, householdID, callerID,
-		middleware.UsernameFrom(r.Context()),
-		"medicine.create", "medicine", &m.ID, &m.Name)
+	WriteAudit(r.Context(), h.DB, medicineEvent(r.Context(), householdID, "medicine.create", &m))
 
 	api.WriteJSON(w, http.StatusCreated, m)
 }
@@ -157,22 +155,23 @@ func (h *MedicineHandler) Update(w http.ResponseWriter, r *http.Request) {
 	householdID := middleware.HouseholdIDFrom(r.Context())
 	id := chi.URLParam(r, "id")
 
-	// Confirm the medicine exists and belongs to this household before decoding
-	// the body — gives a clean 404 rather than a silent no-op on a bad id.
-	var exists int
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM medicines WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
+	// Load the current row before decoding the body: a bad id gets a clean
+	// 404, and the old values decide which audit action this edit is.
+	var before models.Medicine
+	err := scanMedicine(h.DB.QueryRowContext(r.Context(),
+		medicineSelectFrom+` WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
 		id, householdID,
-	).Scan(&exists); err != nil {
-		api.ServerError(w, "Update medicine: existence check", err)
-		return
-	}
-	if exists == 0 {
+	), &before)
+	if errors.Is(err, sql.ErrNoRows) {
 		api.WriteError(w, http.StatusNotFound, models.CodeNotFound, "medicine not found")
 		return
 	}
+	if err != nil {
+		api.ServerError(w, "Update medicine: load", err)
+		return
+	}
 
-	var req models.UpdateMedicineRequest
+	var req models.MedicineRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "invalid JSON")
 		return
@@ -183,17 +182,18 @@ func (h *MedicineHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
-	_, err := h.DB.ExecContext(r.Context(),
+	_, err = h.DB.ExecContext(r.Context(),
 		`UPDATE medicines
 		 SET name=?, quantity=?, unit=?, category=?,
+		     active_ingredient=COALESCE(?, active_ingredient),
 		     expiration_date=?, opened_at=?, days_after_opening=?,
 		     storage_location=?, barcode=?, notes=?,
-		     updated_at=?
+		     updated_at=?, synced_at=?
 		 WHERE id = ? AND household_id = ?`,
-		req.Name, req.Quantity, req.Unit, req.Category,
+		req.Name, req.Quantity, req.Unit, req.Category, req.ActiveIngredient,
 		req.ExpirationDate, req.OpenedAt, req.DaysAfterOpening,
 		req.StorageLocation, req.Barcode, req.Notes,
-		now, id, householdID,
+		now, now, id, householdID,
 	)
 	if err != nil {
 		api.ServerError(w, "Update medicine: exec", err)
@@ -208,10 +208,11 @@ func (h *MedicineHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteAudit(r.Context(), h.DB, householdID,
-		middleware.UserIDFrom(r.Context()),
-		middleware.UsernameFrom(r.Context()),
-		"medicine.update", "medicine", &m.ID, &m.Name)
+	if change, ok := classifyMedicineChange(&before, &m); ok {
+		e := medicineEvent(r.Context(), householdID, change.action, &m)
+		e.QuantityBefore, e.QuantityAfter = change.quantityBefore, change.quantityAfter
+		WriteAudit(r.Context(), h.DB, e)
+	}
 
 	api.WriteJSON(w, http.StatusOK, m)
 }
@@ -239,9 +240,9 @@ func (h *MedicineHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	res, err := h.DB.ExecContext(r.Context(),
-		`UPDATE medicines SET deleted_at = ?, updated_at = ?
+		`UPDATE medicines SET deleted_at = ?, updated_at = ?, synced_at = ?
 		 WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
-		now, now, id, householdID,
+		now, now, now, id, householdID,
 	)
 	if err != nil {
 		api.ServerError(w, "Delete medicine: exec", err)
@@ -254,10 +255,8 @@ func (h *MedicineHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteAudit(r.Context(), h.DB, householdID,
-		middleware.UserIDFrom(r.Context()),
-		middleware.UsernameFrom(r.Context()),
-		"medicine.delete", "medicine", &id, &name)
+	WriteAudit(r.Context(), h.DB, medicineEvent(r.Context(), householdID, "medicine.delete",
+		&models.Medicine{ID: id, Name: name}))
 
 	api.WriteJSON(w, http.StatusOK, nil)
 }

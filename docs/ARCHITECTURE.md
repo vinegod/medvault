@@ -116,20 +116,24 @@ users (id, username, password_hash, active_household_id, ...)
   │       │
   │       └──> households (id, name, created_by, ...)
   │              │
-  │              ├──< medicines (id, household_id, name, …, photo_hash, deleted_at)
+  │              ├──< medicines (id, household_id, name, active_ingredient, …,
+  │              │               photo_hash, deleted_at, disposed_at)
   │              ├──< household_invites (code, household_id, expires_at, used_at, revoked_at)
-  │              └──< household_audit (id, household_id, user_id, action, target_*, at)
+  │              └──< household_audit (id, household_id, user_id, action, target_*,
+  │                                    quantity_before, quantity_after, at)
   │
   ├──< refresh_tokens (id, user_id, token_hash, expires_at, revoked_at)
   └──< user_settings (user_id, alert_days, notification_method, default_category)
 ```
 
-- Soft delete: `medicines.deleted_at` for sync propagation.
+- Soft delete: `medicines.deleted_at` for sync propagation;
+  `medicines.disposed_at` marks a deleted record that was thrown away.
 - Cascades: deleting a household cascades to memberships, medicines,
-  invites, and audit. Deleting a user cascades to their refresh tokens
-  and user_settings; their memberships also cascade out (which can in
-  turn delete a household if they were the sole owner — not handled
-  automatically; the leave/transfer endpoints are the supported flows).
+  invites, and audit. Deleting a user cascades to their refresh tokens,
+  user_settings and memberships, and to rows whose `created_by` points at
+  them. `DELETE /api/auth/account` therefore reassigns `created_by` on
+  medicines and households to the household owner before deleting the
+  user.
 - `users.active_household_id` uses `ON DELETE SET NULL` so a destroyed
   household leaves the user pointer null rather than orphaned.
 

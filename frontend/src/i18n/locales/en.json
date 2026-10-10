@@ -14,7 +14,9 @@
     "join_household": "Join Household",
     "create_household": "New Household",
     "fallback": "MedVault",
-    "go_back": "Go back"
+    "go_back": "Go back",
+    "trash": "Trash",
+    "inventory": "Inventory"
   },
   "sync": {
     "synced": "Synced",
@@ -123,7 +125,13 @@
     "password_hint": "At least 8 characters.",
     "invalid_url": "Enter a valid URL starting with http:// or https://",
     "password_min": "At least 8 characters",
-    "password_ok": "Password length looks good"
+    "password_ok": "Password length looks good",
+    "invite_code": "Invite code (optional)",
+    "invite_code_hint": "Join an existing household. Required if the server is invite-only.",
+    "errors": {
+      "REGISTRATION_CLOSED": "Registration is closed on this server.",
+      "INVITE_REQUIRED": "This server needs an invite code to register."
+    }
   },
   "medicine_form": {
     "name": "Name",
@@ -160,7 +168,11 @@
     "photo_uploaded": "Photo saved.",
     "photo_removed": "Photo removed.",
     "photo_failed": "Couldn't save photo.",
-    "save_before_photo": "Save the medicine first, then add a photo."
+    "save_before_photo": "Save the medicine first, then add a photo.",
+    "active_ingredient": "Active ingredient",
+    "active_ingredient_placeholder": "e.g. ibuprofen",
+    "same_ingredient": "Same active ingredient as: {{names}}. Check before taking both.",
+    "history": "History"
   },
   "settings": {
     "group_account": "Account",
@@ -209,7 +221,19 @@
     "disconnected_toast": "Disconnected. Local copy of server data was cleared.",
     "disconnect_dialog_title": "Disconnect from server?",
     "disconnect_dialog_description": "Your local copy of medicines synced from this server will be cleared so they can't be uploaded to a different server later. <strong>Export first</strong> if you want to keep a backup.",
-    "disconnect_confirm": "Disconnect & clear"
+    "disconnect_confirm": "Disconnect & clear",
+    "sessions_title": "Sessions",
+    "sessions_description": "Sign out every other device that uses this account.",
+    "logout_others": "Sign out other devices",
+    "logout_others_done": "Other devices signed out.",
+    "delete_account_title": "Delete account",
+    "delete_account_description": "Removes your account. Households where you are the only member are deleted; in shared ones your medicines stay with the household.",
+    "delete_account_button": "Delete account",
+    "delete_account_confirm_title": "Delete your account?",
+    "delete_account_confirm_description": "This cannot be undone.",
+    "account_deleted": "Account deleted.",
+    "inventory_description": "Export your medicines as a spreadsheet or print a checklist.",
+    "export_csv": "Export CSV"
   },
   "household": {
     "load_error_title": "Couldn't load household",
@@ -266,7 +290,10 @@
       "household.rename": "renamed the household to {{target}}",
       "household.member.add": "joined the household",
       "household.member.remove": "removed {{target}}",
-      "household.transfer": "transferred ownership to {{target}}"
+      "household.transfer": "transferred ownership to {{target}}",
+      "medicine.restore": "restored {{target}}",
+      "medicine.dispose": "disposed of {{target}}",
+      "medicine.quantity": "changed quantity of {{target}}"
     }
   },
   "household_switcher": {
@@ -327,5 +354,48 @@
     "title": "Page not found",
     "description": "The page you're looking for doesn't exist.",
     "go_home": "Go to medicines"
+  },
+  "filter": {
+    "label": "Filter",
+    "all": "All",
+    "expired": "Expired",
+    "expiring": "Expiring soon",
+    "low": "Low stock",
+    "opened": "Opened",
+    "category": "Category",
+    "location": "Location",
+    "any_category": "Any category",
+    "any_location": "Any location",
+    "clear": "Clear filters",
+    "no_matches": "No medicines match these filters."
+  },
+  "packs": {
+    "summary_one": "{{count}} pack · {{total}} {{unit}} total",
+    "summary_other": "{{count}} packs · {{total}} {{unit}} total",
+    "earliest": "Earliest expiry {{date}}",
+    "add": "Add another pack"
+  },
+  "dispose": {
+    "button": "Dispose",
+    "confirm_title": "Dispose of {{name}}?",
+    "hint": "Take expired medicines to a pharmacy take-back point. Don't flush them or put loose pills in household waste.",
+    "done": "{{name}} marked as disposed."
+  },
+  "trash": {
+    "title": "Recently deleted",
+    "description": "Deleted and disposed medicines. Restore anything removed by mistake.",
+    "open": "Open trash",
+    "empty_title": "Trash is empty",
+    "empty_description": "Deleted medicines appear here.",
+    "disposed": "Disposed",
+    "deleted_on": "Removed {{date}}",
+    "restore": "Restore",
+    "restored": "{{name}} restored."
+  },
+  "inventory": {
+    "title": "Inventory",
+    "print": "Print inventory",
+    "use_by": "Use by",
+    "checked": "Checked"
   }
 }

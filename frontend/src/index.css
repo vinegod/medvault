@@ -186,3 +186,9 @@ h3 {
     grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   }
 }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

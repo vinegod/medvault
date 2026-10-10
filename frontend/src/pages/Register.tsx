@@ -14,6 +14,7 @@ export default function Register() {
   const [serverUrl, setServerUrl] = useState("http://localhost:8080");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -24,12 +25,14 @@ export default function Register() {
       serverUrl.trim().replace(/\/$/, ""),
       username.trim(),
       password,
-      true
+      true,
+      inviteCode.trim()
     );
     setLoading(false);
     if (result.success) {
       toast.success(t("auth.account_created"));
-      navigate("/onboarding/household");
+      // An invite already placed the user in a household.
+      navigate(inviteCode.trim() ? "/medicines" : "/onboarding/household");
     } else {
       toast.error(result.error ?? t("auth.registration_failed"));
     }
@@ -85,6 +88,19 @@ export default function Register() {
             >
               {password.length >= 8 ? t("auth.password_ok") : t("auth.password_min")}
             </small>
+          </label>
+
+          <label style={lbl}>
+            {t("auth.invite_code")}
+            <input
+              style={{ ...inp, textTransform: "uppercase", letterSpacing: "0.1em" }}
+              type="text"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              autoComplete="off"
+              maxLength={16}
+            />
+            <small style={hint}>{t("auth.invite_code_hint")}</small>
           </label>
 
           <Button type="submit" disabled={loading} fullWidth size="lg">

@@ -4,7 +4,7 @@ import { useTranslation, Trans } from "react-i18next";
 import i18n from "../i18n";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
-import { exportAll, importData, getMeta, setMeta } from "../services/db";
+import { exportAll, importData, getMeta, setMeta, getActiveMedicines } from "../services/db";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { useTheme, type Theme } from "../hooks/useTheme";
 import { apiClient } from "../services/api";
@@ -12,6 +12,7 @@ import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { encryptJSON, decryptJSON, type EncryptedExport } from "../utils/crypto";
+import { medicinesToCSV } from "../utils/csv";
 import {
   isEnabled as notificationsEnabled,
   notificationPermission,
@@ -34,6 +35,8 @@ export default function Settings() {
   const [encryptExport, setEncryptExport] = useState(false);
   const [exportPassphrase, setExportPassphrase] = useState("");
   const [notifEnabled, setNotifEnabled] = useState(notificationsEnabled());
+  const [deletePassword, setDeletePassword] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const isConnected = status === "connected";
 
   useEffect(() => {
@@ -68,6 +71,35 @@ export default function Settings() {
     }
   }
 
+  async function handleLogoutOthers() {
+    const refreshToken = await getMeta("refresh_token");
+    const res = await apiClient.post("/api/auth/logout-others", { refresh_token: refreshToken });
+    if (res.error) {
+      toast.error(res.error.message);
+      return;
+    }
+    toast.success(t("settings.logout_others_done"));
+  }
+
+  async function handleDeleteAccount() {
+    setConfirmDelete(false);
+    const res = await apiClient.request("DELETE", "/api/auth/account", {
+      password: deletePassword,
+    });
+    setDeletePassword("");
+    if (res.error) {
+      toast.error(res.error.message);
+      return;
+    }
+    await disconnect();
+    toast.info(t("settings.account_deleted"));
+  }
+
+  async function handleExportCSV() {
+    const csv = medicinesToCSV(await getActiveMedicines(), t);
+    download(new Blob([csv], { type: "text/csv;charset=utf-8" }), "csv");
+  }
+
   async function handleThresholdChange(value: number) {
     const clamped = Math.max(1, Math.min(99, value));
     setThreshold(clamped);
@@ -89,14 +121,10 @@ export default function Settings() {
       payload = JSON.stringify(env, null, 2);
     }
 
-    const blob = new Blob([payload], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const suffix = encryptExport ? ".enc.json" : ".json";
-    a.download = `medvault-export-${new Date().toISOString().split("T")[0]}${suffix}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    download(
+      new Blob([payload], { type: "application/json" }),
+      encryptExport ? "enc.json" : "json"
+    );
     setExportPassphrase("");
     toast.success(t("settings.exported"));
   }
@@ -274,6 +302,51 @@ export default function Settings() {
               </form>
             </section>
           )}
+
+          {isConnected && (
+            <section style={card}>
+              <h3 style={{ ...cardTitle, marginBottom: "0.25rem" }}>
+                {t("settings.sessions_title")}
+              </h3>
+              <p style={cardHint}>{t("settings.sessions_description")}</p>
+              <Button
+                variant="secondary"
+                onClick={handleLogoutOthers}
+                iconLeft={<Icon name="logout" size={16} />}
+              >
+                {t("settings.logout_others")}
+              </Button>
+            </section>
+          )}
+
+          {isConnected && (
+            <section style={card}>
+              <h3 style={{ ...cardTitle, marginBottom: "0.25rem" }}>
+                {t("settings.delete_account_title")}
+              </h3>
+              <p style={cardHint}>{t("settings.delete_account_description")}</p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setConfirmDelete(true);
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}
+              >
+                <input
+                  type="password"
+                  placeholder={t("settings.password_current")}
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  autoComplete="current-password"
+                  style={inputStyle}
+                  required
+                />
+                <Button type="submit" variant="danger" disabled={!deletePassword}>
+                  {t("settings.delete_account_button")}
+                </Button>
+              </form>
+            </section>
+          )}
         </div>
       </div>
 
@@ -334,6 +407,35 @@ export default function Settings() {
                 />
               </label>
             </div>
+          </section>
+
+          <section style={card}>
+            <h3 style={{ ...cardTitle, marginBottom: "0.25rem" }}>{t("inventory.title")}</h3>
+            <p style={cardHint}>{t("settings.inventory_description")}</p>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <Button
+                variant="secondary"
+                onClick={handleExportCSV}
+                iconLeft={<Icon name="download" size={18} />}
+              >
+                {t("settings.export_csv")}
+              </Button>
+              <Link to="/inventory/print" style={{ textDecoration: "none" }}>
+                <Button variant="secondary" iconLeft={<Icon name="printer" size={18} />}>
+                  {t("inventory.print")}
+                </Button>
+              </Link>
+            </div>
+          </section>
+
+          <section style={card}>
+            <h3 style={{ ...cardTitle, marginBottom: "0.25rem" }}>{t("trash.title")}</h3>
+            <p style={cardHint}>{t("trash.description")}</p>
+            <Link to="/trash" style={{ textDecoration: "none" }}>
+              <Button variant="secondary" iconLeft={<Icon name="trash" size={18} />}>
+                {t("trash.open")}
+              </Button>
+            </Link>
           </section>
 
           <section style={card}>
@@ -499,9 +601,34 @@ export default function Settings() {
         onConfirm={handleDisconnect}
         onCancel={() => setConfirmDisconnect(false)}
       />
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t("settings.delete_account_confirm_title")}
+        description={t("settings.delete_account_confirm_description")}
+        confirmLabel={t("settings.delete_account_button")}
+        destructive
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }
+
+// download saves blob as medvault-export-<date>.<extension>.
+function download(blob: Blob, extension: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `medvault-export-${new Date().toISOString().split("T")[0]}.${extension}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const cardHint: React.CSSProperties = {
+  color: "var(--color-text-muted)",
+  fontSize: "0.85rem",
+  marginBottom: "0.75rem",
+};
 
 const card: React.CSSProperties = {
   background: "var(--color-surface)",

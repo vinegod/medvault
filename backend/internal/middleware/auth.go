@@ -34,7 +34,7 @@ func RequireAuth(jwtSecret string) func(http.Handler) http.Handler {
 			}
 
 			claims, err := auth.ValidateToken(jwtSecret, parts[1])
-			if err != nil {
+			if err != nil || claims.Type != auth.TokenTypeAccess {
 				api.WriteError(w, http.StatusUnauthorized, models.CodeUnauthorized, "invalid or expired token")
 				return
 			}

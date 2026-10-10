@@ -1,25 +1,37 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/vinegod/medvault/backend/internal/api"
 	"github.com/vinegod/medvault/backend/internal/auth"
+	"github.com/vinegod/medvault/backend/internal/database"
 	"github.com/vinegod/medvault/backend/internal/middleware"
 	"github.com/vinegod/medvault/backend/internal/models"
 )
 
+// Registration modes for AuthHandler.RegistrationMode. The zero value
+// behaves as RegistrationOpen.
+const (
+	RegistrationOpen   = "open"
+	RegistrationInvite = "invite"
+	RegistrationClosed = "closed"
+)
+
 // AuthHandler holds dependencies for all authentication endpoints.
 type AuthHandler struct {
-	DB         *sql.DB
-	JWTSecret  string
-	AccessTTL  time.Duration
-	RefreshTTL time.Duration
+	DB               *sql.DB
+	JWTSecret        string
+	AccessTTL        time.Duration
+	RefreshTTL       time.Duration
+	RegistrationMode string
 }
 
 // authResponse matches the shape frontend/src/types/index.ts AuthResponse expects.
@@ -39,8 +51,10 @@ type tokenResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// Register creates a user, a personal household, and an owner membership
-// all in one transaction so a partial failure leaves no orphaned rows.
+// Register creates a user plus either a personal household or, with an
+// invite code, a membership in the invited household, in one transaction.
+// RegistrationMode can require an invite or close signup; the first user
+// can always register.
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req models.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -49,6 +63,20 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := req.Validate(); err != nil {
 		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, err.Error())
+		return
+	}
+
+	var userCount int
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM users`).Scan(&userCount); err != nil {
+		api.ServerError(w, "register: count users", err)
+		return
+	}
+	if status, code, msg, blocked := registrationBlocked(
+		h.RegistrationMode,
+		userCount == 0,
+		req.InviteCode != "",
+	); blocked {
+		api.WriteError(w, status, code, msg)
 		return
 	}
 
@@ -72,7 +100,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := uuid.NewString()
-	householdID := uuid.NewString()
 	now := time.Now().UTC()
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
@@ -91,29 +118,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err = tx.ExecContext(r.Context(),
-		`INSERT INTO households (id, name, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)`,
-		householdID, req.Username+"'s Household", userID, now, now,
-	); err != nil {
-		api.ServerError(w, "register: insert household", err)
+	if req.InviteCode == "" {
+		err = createPersonalHousehold(r.Context(), tx, userID, req.Username, now)
+	} else {
+		_, err = joinWithInvite(r.Context(), tx, req.InviteCode, userID, req.Username, now)
+	}
+	if errors.Is(err, errInviteInvalid) {
+		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "invalid or expired invite code")
 		return
 	}
-
-	if _, err = tx.ExecContext(r.Context(),
-		`INSERT INTO memberships (user_id, household_id, role, joined_at)
-		 VALUES (?, ?, ?, ?)`,
-		userID, householdID, models.RoleOwner, now,
-	); err != nil {
-		api.ServerError(w, "register: insert membership", err)
-		return
-	}
-
-	if _, err = tx.ExecContext(r.Context(),
-		`UPDATE users SET active_household_id = ? WHERE id = ?`,
-		householdID, userID,
-	); err != nil {
-		api.ServerError(w, "register: set active household", err)
+	if err != nil {
+		api.ServerError(w, "register", err)
 		return
 	}
 
@@ -128,6 +143,50 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	api.WriteJSON(w, http.StatusCreated, resp)
+}
+
+// registrationBlocked reports whether signup must be refused under mode,
+// and with which error. The first user is always let through.
+func registrationBlocked(mode string, firstUser, hasInvite bool) (status int, code, msg string, blocked bool) {
+	if firstUser {
+		return 0, "", "", false
+	}
+	switch mode {
+	case RegistrationClosed:
+		return http.StatusForbidden, models.CodeRegistrationClosed, "registration is closed on this server", true
+	case RegistrationInvite:
+		if !hasInvite {
+			return http.StatusBadRequest, models.CodeInviteRequired, "an invite code is required to register", true
+		}
+	}
+	return 0, "", "", false
+}
+
+// createPersonalHousehold makes userID the owner of a new
+// "<username>'s Household" and sets it as their active household.
+func createPersonalHousehold(ctx context.Context, tx *sql.Tx, userID, username string, now time.Time) error {
+	householdID := uuid.NewString()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO households (id, name, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		householdID, username+"'s Household", userID, now, now,
+	); err != nil {
+		return fmt.Errorf("insert household: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO memberships (user_id, household_id, role, joined_at)
+		 VALUES (?, ?, ?, ?)`,
+		userID, householdID, models.RoleOwner, now,
+	); err != nil {
+		return fmt.Errorf("insert membership: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET active_household_id = ? WHERE id = ?`,
+		householdID, userID,
+	); err != nil {
+		return fmt.Errorf("set active household: %w", err)
+	}
+	return nil
 }
 
 // Login verifies credentials and returns a fresh token pair.
@@ -186,8 +245,11 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Tokens issued before the "typ" claim existed carry an empty type; they
+	// are still checked against refresh_tokens below, so only reject an
+	// explicit access token here.
 	claims, err := auth.ValidateToken(h.JWTSecret, req.RefreshToken)
-	if err != nil {
+	if err != nil || claims.Type == auth.TokenTypeAccess {
 		api.WriteError(w, http.StatusUnauthorized, models.CodeUnauthorized, "invalid or expired refresh token")
 		return
 	}
@@ -218,11 +280,21 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete old token before issuing new pair (rotation).
-	if _, err = h.DB.ExecContext(r.Context(),
+	// Delete old token before issuing new pair (rotation). Two concurrent
+	// refreshes with the same token both pass the SELECT above; only the one
+	// whose DELETE actually removes the row may mint a new pair.
+	res, err := h.DB.ExecContext(r.Context(),
 		`DELETE FROM refresh_tokens WHERE id = ?`, storedID,
-	); err != nil {
+	)
+	if err != nil {
 		api.ServerError(w, "refresh: delete old token", err)
+		return
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		api.ServerError(w, "refresh: delete old token", err)
+		return
+	} else if n == 0 {
+		api.WriteError(w, http.StatusUnauthorized, models.CodeUnauthorized, "refresh token not recognised or revoked")
 		return
 	}
 
@@ -299,33 +371,8 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC()
-	tx, err := h.DB.BeginTx(r.Context(), nil)
-	if err != nil {
-		api.ServerError(w, "changePassword: begin tx", err)
-		return
-	}
-	defer tx.Rollback() //nolint:errcheck // superseded by Commit on success
-
-	if _, err = tx.ExecContext(r.Context(),
-		`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`,
-		newHash, now, userID,
-	); err != nil {
-		api.ServerError(w, "changePassword: update hash", err)
-		return
-	}
-
-	// Revoke all existing refresh tokens so other devices are forced to re-login.
-	if _, err = tx.ExecContext(r.Context(),
-		`UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`,
-		now, userID,
-	); err != nil {
-		api.ServerError(w, "changePassword: revoke tokens", err)
-		return
-	}
-
-	if err = tx.Commit(); err != nil {
-		api.ServerError(w, "changePassword: commit", err)
+	if err := database.SetPassword(r.Context(), h.DB, username, newHash); err != nil {
+		api.ServerError(w, "changePassword", err)
 		return
 	}
 

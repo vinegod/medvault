@@ -1,8 +1,9 @@
 package handlers_test
 
 // Sync-time enrichment: when the server receives a brand-new medicine record
-// with an empty `category` or `notes`, it looks the trade name up in the
-// configured drug DB and fills the missing fields. These tests pin down:
+// with an empty `active_ingredient` or `notes`, it looks the trade name up in
+// the configured drug DB and fills the missing fields. `category` is the
+// user's own grouping and is never filled. These tests pin down:
 //   - both fields fill on first insert when the lookup succeeds
 //   - already-populated fields are never overwritten
 //   - update of an existing id never re-fires enrichment
@@ -82,15 +83,16 @@ func (h *enrichHarness) postSync(changes []map[string]any) int {
 	return resp.StatusCode
 }
 
-// fetchMedicine returns (category, notes) for id from the medicines table.
-func (h *enrichHarness) fetchMedicine(id string) (category, notes string) {
+// fetchMedicine returns (active_ingredient, notes) for id from the medicines
+// table. A NULL ingredient reads as "".
+func (h *enrichHarness) fetchMedicine(id string) (ingredient, notes string) {
 	h.t.Helper()
 	if err := h.db.QueryRow(
-		`SELECT category, notes FROM medicines WHERE id = ?`, id,
-	).Scan(&category, &notes); err != nil {
+		`SELECT COALESCE(active_ingredient, ''), notes FROM medicines WHERE id = ?`, id,
+	).Scan(&ingredient, &notes); err != nil {
 		h.t.Fatalf("fetch %s: %v", id, err)
 	}
-	return category, notes
+	return ingredient, notes
 }
 
 // changeRecord builds a minimal valid sync change. Caller can tweak fields.
@@ -126,13 +128,19 @@ func TestSyncEnrich_FillsBothEmptyFields(t *testing.T) {
 		t.Fatalf("sync status: got %d want 200", status)
 	}
 
-	cat, notes := h.fetchMedicine(id)
-	if cat != "Amoxicillin; Clavulanic acid" {
-		t.Errorf("category: got %q want filled from ingredients", cat)
+	ingredient, notes := h.fetchMedicine(id)
+	if ingredient != "amoxicillin" {
+		t.Errorf("active_ingredient: got %q want INN %q", ingredient, "amoxicillin")
 	}
-	want := "amoxicillin\nAntibacterial agents"
-	if notes != want {
-		t.Errorf("notes: got %q want %q", notes, want)
+	if notes != "Antibacterial agents" {
+		t.Errorf("notes: got %q want pharma group", notes)
+	}
+	var category string
+	if err := h.db.QueryRow(`SELECT category FROM medicines WHERE id = ?`, id).Scan(&category); err != nil {
+		t.Fatalf("fetch category: %v", err)
+	}
+	if category != "" {
+		t.Errorf("category must not be filled, got %q", category)
 	}
 }
 
@@ -141,15 +149,15 @@ func TestSyncEnrich_PreservesNonEmptyFields(t *testing.T) {
 	id := uuid.NewString()
 
 	rec := changeRecord(id, seedName)
-	rec["category"] = "Already set"
+	rec["active_ingredient"] = "Already set"
 	rec["notes"] = "use after meals"
 	if status := h.postSync([]map[string]any{rec}); status != http.StatusOK {
 		t.Fatalf("sync: got %d", status)
 	}
 
-	cat, notes := h.fetchMedicine(id)
-	if cat != "Already set" || notes != "use after meals" {
-		t.Errorf("user values overwritten: cat=%q notes=%q", cat, notes)
+	ingredient, notes := h.fetchMedicine(id)
+	if ingredient != "Already set" || notes != "use after meals" {
+		t.Errorf("user values overwritten: ingredient=%q notes=%q", ingredient, notes)
 	}
 }
 
@@ -163,9 +171,9 @@ func TestSyncEnrich_FillsOnlyEmptySide(t *testing.T) {
 		t.Fatalf("sync: got %d", status)
 	}
 
-	cat, notes := h.fetchMedicine(id)
-	if cat != "Amoxicillin; Clavulanic acid" {
-		t.Errorf("category should fill: got %q", cat)
+	ingredient, notes := h.fetchMedicine(id)
+	if ingredient != "amoxicillin" {
+		t.Errorf("active_ingredient should fill: got %q", ingredient)
 	}
 	if notes != "user typed this" {
 		t.Errorf("notes should be preserved: got %q", notes)
@@ -190,9 +198,9 @@ func TestSyncEnrich_NotFiredOnUpdate(t *testing.T) {
 		t.Fatalf("second sync: got %d", status)
 	}
 
-	cat, notes := h.fetchMedicine(id)
-	if cat != "" || notes != "" {
-		t.Errorf("update should not enrich: cat=%q notes=%q", cat, notes)
+	ingredient, notes := h.fetchMedicine(id)
+	if ingredient != "" || notes != "" {
+		t.Errorf("update should not enrich: ingredient=%q notes=%q", ingredient, notes)
 	}
 }
 
@@ -204,9 +212,9 @@ func TestSyncEnrich_NoMatch_LeavesEmpty(t *testing.T) {
 		t.Fatalf("sync: got %d", status)
 	}
 
-	cat, notes := h.fetchMedicine(id)
-	if cat != "" || notes != "" {
-		t.Errorf("unmatched name should not fill: cat=%q notes=%q", cat, notes)
+	ingredient, notes := h.fetchMedicine(id)
+	if ingredient != "" || notes != "" {
+		t.Errorf("unmatched name should not fill: ingredient=%q notes=%q", ingredient, notes)
 	}
 }
 
@@ -218,9 +226,9 @@ func TestSyncEnrich_RegistryEmpty_NoOp(t *testing.T) {
 		t.Fatalf("sync: got %d", status)
 	}
 
-	cat, notes := h.fetchMedicine(id)
-	if cat != "" || notes != "" {
-		t.Errorf("no DB → no fill, but got cat=%q notes=%q", cat, notes)
+	ingredient, notes := h.fetchMedicine(id)
+	if ingredient != "" || notes != "" {
+		t.Errorf("no DB → no fill, but got ingredient=%q notes=%q", ingredient, notes)
 	}
 }
 
@@ -232,8 +240,8 @@ func TestSyncEnrich_CountryUnset_NoOp(t *testing.T) {
 		t.Fatalf("sync: got %d", status)
 	}
 
-	cat, notes := h.fetchMedicine(id)
-	if cat != "" || notes != "" {
-		t.Errorf("country unset → no fill, but got cat=%q notes=%q", cat, notes)
+	ingredient, notes := h.fetchMedicine(id)
+	if ingredient != "" || notes != "" {
+		t.Errorf("country unset → no fill, but got ingredient=%q notes=%q", ingredient, notes)
 	}
 }

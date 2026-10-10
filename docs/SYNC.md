@@ -20,6 +20,19 @@ never partial patches. This eliminates ambiguity about whether omitted
 fields should be cleared or preserved. The server overwrites its copy
 in full when the client `updated_at` is newer.
 
+Two fields are handled specially so clients built before they existed
+keep working:
+
+- `active_ingredient` omitted or `null` keeps the stored value. Send `""`
+  to clear it.
+- `disposed_at` is cleared by the server whenever `deleted_at` is null,
+  so restoring a record always clears the disposal.
+
+Every applied change is written to the household audit log
+(`medicine.create`, `.update`, `.quantity`, `.delete`, `.dispose`,
+`.restore`). Changes that lose last-write-wins or change no visible field
+are not logged.
+
 ## Endpoint
 
 `POST /api/sync` — see [API.md](API.md#sync) for the request/response
@@ -153,12 +166,14 @@ DB; an Android client should use a file-cache keyed by hash).
 
 ## Drug autofill enrichment (server side)
 
-When `POST /api/sync` sees a brand-new record id whose `category`
+When `POST /api/sync` sees a brand-new record id whose `active_ingredient`
 and/or `notes` is empty, the server attempts an exact case-insensitive
 name lookup against the configured drug DB. If a match is found:
 
-- Empty `category` is filled with `ingredients`.
-- Empty `notes` is filled with `joinDrugNotes(inn, pharma_group)`.
+- Empty `active_ingredient` is filled with `inn`, or `ingredients` when
+  there is no INN.
+- Empty `notes` is filled with `pharma_group`.
+- `category` is never filled; it is the user's own grouping.
 
 The server only does this on first insert (subsequent edits skip the
 lookup), so user edits never get overwritten. Failure of the lookup

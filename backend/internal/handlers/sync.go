@@ -72,6 +72,20 @@ func (h *SyncHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// last_sync is the server_time echoed back from a previous response
+	// (RFC 3339, seconds precision). RFC3339Nano also accepts fractional
+	// seconds, so clients that reformat the value keep working.
+	var since *time.Time
+	if req.LastSync != nil {
+		t, err := time.Parse(time.RFC3339Nano, *req.LastSync)
+		if err != nil {
+			api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "last_sync must be an RFC 3339 timestamp")
+			return
+		}
+		t = t.UTC()
+		since = &t
+	}
+
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		api.ServerError(w, "sync: begin tx", err)
@@ -107,7 +121,13 @@ func (h *SyncHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	records, err := h.queryRecords(r, householdID, req.LastSync)
+	// Capture server_time before the read so a write landing between the
+	// query and the response is picked up by the next sync instead of
+	// falling behind the cursor. RFC3339 truncates to whole seconds, which
+	// only widens that safety margin (re-sent records are idempotent).
+	serverTime := time.Now().UTC()
+
+	records, err := h.queryRecords(r, householdID, since)
 	if err != nil {
 		api.ServerError(w, "sync: query records", err)
 		return
@@ -115,7 +135,7 @@ func (h *SyncHandler) Sync(w http.ResponseWriter, r *http.Request) {
 
 	api.WriteJSON(w, http.StatusOK, syncResponse{
 		Records:    records,
-		ServerTime: time.Now().UTC().Format(time.RFC3339),
+		ServerTime: serverTime.Format(time.RFC3339),
 	})
 }
 
@@ -166,38 +186,34 @@ func (h *SyncHandler) applyChange(
 		}
 	}
 
-	// Clamp client-supplied timestamps to (now + skew) so a wildly wrong
-	// device clock can't lock records by always winning LWW. Records with
-	// sane clocks are unaffected.
-	if c.UpdatedAt.After(clampCutoff) {
-		c.UpdatedAt = now
-	}
-	if c.CreatedAt.After(clampCutoff) {
-		c.CreatedAt = now
+	normalizeTimestamps(c, now, clampCutoff)
+
+	before, err := loadMedicine(ctx, tx, c.ID)
+	if err != nil {
+		return err
 	}
 
-	// First-insert enrichment: when the id is new and the configured drug DB
-	// has an exact name match, fill empty `category` and `notes` from it.
-	// Subsequent edits skip this path because the id will then exist.
-	if c.DeletedAt == nil {
-		h.enrichOnFirstInsert(ctx, tx, c)
+	if before == nil && c.DeletedAt == nil {
+		h.enrichFromDrugDB(ctx, c)
 	}
 
 	// Single-statement upsert with LWW built into the WHERE clause:
 	// ON CONFLICT only updates when the client copy is newer AND the
 	// existing row belongs to the same household (security guard).
-	_, err := tx.ExecContext(ctx, `
+	// A nil active_ingredient keeps the stored value.
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO medicines
-		  (id, household_id, created_by, name, quantity, unit, category,
+		  (id, household_id, created_by, name, quantity, unit, category, active_ingredient,
 		   expiration_date, opened_at, days_after_opening,
 		   storage_location, barcode, notes,
-		   created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		   created_at, updated_at, deleted_at, disposed_at, synced_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 		  name               = excluded.name,
 		  quantity           = excluded.quantity,
 		  unit               = excluded.unit,
 		  category           = excluded.category,
+		  active_ingredient  = COALESCE(excluded.active_ingredient, medicines.active_ingredient),
 		  expiration_date    = excluded.expiration_date,
 		  opened_at          = excluded.opened_at,
 		  days_after_opening = excluded.days_after_opening,
@@ -205,41 +221,85 @@ func (h *SyncHandler) applyChange(
 		  barcode            = excluded.barcode,
 		  notes              = excluded.notes,
 		  updated_at         = excluded.updated_at,
-		  deleted_at         = excluded.deleted_at
+		  deleted_at         = excluded.deleted_at,
+		  disposed_at        = excluded.disposed_at,
+		  synced_at          = excluded.synced_at
 		WHERE excluded.updated_at > medicines.updated_at
 		  AND medicines.household_id = excluded.household_id`,
 		c.ID, householdID, callerID,
-		c.Name, c.Quantity, c.Unit, c.Category,
+		c.Name, c.Quantity, c.Unit, c.Category, c.ActiveIngredient,
 		c.ExpirationDate, c.OpenedAt, c.DaysAfterOpening,
 		c.StorageLocation, c.Barcode, c.Notes,
-		c.CreatedAt, c.UpdatedAt, c.DeletedAt,
+		c.CreatedAt, c.UpdatedAt, c.DeletedAt, c.DisposedAt, now,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert medicine %s: %w", c.ID, err)
 	}
+	applied, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("upsert medicine %s: rows affected: %w", c.ID, err)
+	}
+	if applied == 0 {
+		return nil // lost LWW or belongs to another household
+	}
+
+	if change, ok := classifyMedicineChange(before, c); ok {
+		e := medicineEvent(ctx, householdID, change.action, c)
+		e.QuantityBefore, e.QuantityAfter = change.quantityBefore, change.quantityAfter
+		WriteAudit(ctx, tx, e)
+	}
 	return nil
 }
 
-// enrichOnFirstInsert fills empty `category` and `notes` from the drug DB
-// when the medicine `id` does not already exist server-side. No-op when the
-// drug registry isn't configured, when both fields are already populated, or
-// when the drug DB has no exact-name match. Errors are logged and swallowed:
-// enrichment is best-effort and must never block a sync.
-func (h *SyncHandler) enrichOnFirstInsert(ctx context.Context, tx *sql.Tx, c *models.Medicine) {
+// normalizeTimestamps converts c's timestamps to UTC, clears DisposedAt on
+// a live record, and clamps CreatedAt/UpdatedAt past clampCutoff to now.
+func normalizeTimestamps(c *models.Medicine, now, clampCutoff time.Time) {
+	// Stored as text and compared lexicographically, so every value needs
+	// the same offset.
+	c.UpdatedAt = c.UpdatedAt.UTC()
+	c.CreatedAt = c.CreatedAt.UTC()
+	if c.DeletedAt != nil {
+		d := c.DeletedAt.UTC()
+		c.DeletedAt = &d
+	}
+	if c.DeletedAt == nil {
+		c.DisposedAt = nil
+	} else if c.DisposedAt != nil {
+		d := c.DisposedAt.UTC()
+		c.DisposedAt = &d
+	}
+
+	// A wildly wrong device clock must not win every LWW round.
+	if c.UpdatedAt.After(clampCutoff) {
+		c.UpdatedAt = now
+	}
+	if c.CreatedAt.After(clampCutoff) {
+		c.CreatedAt = now
+	}
+}
+
+// loadMedicine returns the stored medicine with the given id in any
+// household, or nil when the id is new.
+func loadMedicine(ctx context.Context, tx *sql.Tx, id string) (*models.Medicine, error) {
+	var m models.Medicine
+	err := scanMedicine(tx.QueryRowContext(ctx, medicineSelectFrom+` WHERE id = ?`, id), &m)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load medicine %s: %w", id, err)
+	}
+	return &m, nil
+}
+
+// enrichFromDrugDB fills an empty active_ingredient (INN, else the
+// ingredient list) and empty notes (pharma group) from an exact drug DB
+// name match. Lookup errors are logged and ignored.
+func (h *SyncHandler) enrichFromDrugDB(ctx context.Context, c *models.Medicine) {
 	if h.DrugRegistry == nil || h.DrugCountry == "" {
 		return
 	}
-	if c.Category != "" && c.Notes != "" {
-		return
-	}
-
-	var exists int
-	err := tx.QueryRowContext(ctx, `SELECT 1 FROM medicines WHERE id = ?`, c.ID).Scan(&exists)
-	if err == nil {
-		return // id already exists — not a first insert
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		slog.Warn("sync enrich: id existence check", "id", c.ID, "err", err)
+	if deref(c.ActiveIngredient) != "" && c.Notes != "" {
 		return
 	}
 
@@ -252,41 +312,47 @@ func (h *SyncHandler) enrichOnFirstInsert(ctx context.Context, tx *sql.Tx, c *mo
 		return
 	}
 
-	if c.Category == "" && d.Ingredients != nil {
-		c.Category = *d.Ingredients
+	// Drug DB values can exceed our field limits. Keep the record valid,
+	// otherwise the client gets it back and every later edit fails sync.
+	origIngredient, origNotes := c.ActiveIngredient, c.Notes
+	defer func() {
+		if c.Validate() != nil {
+			c.ActiveIngredient, c.Notes = origIngredient, origNotes
+		}
+	}()
+
+	if deref(c.ActiveIngredient) == "" {
+		switch {
+		case d.INN != nil && *d.INN != "":
+			c.ActiveIngredient = d.INN
+		case d.Ingredients != nil:
+			c.ActiveIngredient = d.Ingredients
+		}
 	}
-	if c.Notes == "" {
-		var inn, pg string
-		if d.INN != nil {
-			inn = *d.INN
-		}
-		if d.PharmaGroup != nil {
-			pg = *d.PharmaGroup
-		}
-		if joined := database.JoinDrugNotes(inn, pg); joined != "" {
-			c.Notes = joined
-		}
+	if c.Notes == "" && d.PharmaGroup != nil {
+		c.Notes = *d.PharmaGroup
 	}
 }
 
-// queryRecords fetches all household medicines updated since lastSync.
-// If lastSync is nil the full set is returned (first sync).
-func (h *SyncHandler) queryRecords(r *http.Request, householdID string, lastSync *string) ([]models.Medicine, error) {
+// queryRecords fetches all household medicines written on the server
+// after since. If since is nil the full set is returned (first sync).
+//
+// Filters on synced_at (server clock), not updated_at (client clock), so an
+// offline edit uploaded late still reaches devices that synced in between.
+func (h *SyncHandler) queryRecords(r *http.Request, householdID string, since *time.Time) ([]models.Medicine, error) {
 	var (
 		rows *sql.Rows
 		err  error
 	)
-	if lastSync == nil {
+	if since == nil {
 		rows, err = h.DB.QueryContext(r.Context(),
 			medicineSelectFrom+` WHERE household_id = ?`,
 			householdID,
 		)
 	} else {
-		layout := "2006-01-02T15:04:05.000Z"
-		lastSyncTime, _ := time.Parse(layout, *lastSync)
 		rows, err = h.DB.QueryContext(r.Context(),
-			medicineSelectFrom+` WHERE household_id = ? AND updated_at > ?`,
-			householdID, lastSyncTime,
+			medicineSelectFrom+` WHERE household_id = ? AND synced_at > ?`,
+			householdID, *since,
 		)
 	}
 	if err != nil {

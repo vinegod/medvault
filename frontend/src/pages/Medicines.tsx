@@ -13,6 +13,15 @@ import {
 import { MedicineCard } from "../components/MedicineCard";
 import { SearchBar } from "../components/SearchBar";
 import { SortBar, type SortKey, isSortKey } from "../components/SortBar";
+import {
+  FilterBar,
+  type MedicineFilter,
+  NO_FILTER,
+  matchesFilter,
+  parseFilter,
+} from "../components/FilterBar";
+import { MedicinePackGroup } from "../components/MedicinePackGroup";
+import { groupMedicines } from "../utils/groups";
 import { EmptyState } from "../components/EmptyState";
 import { FAB } from "../components/FAB";
 import { Button } from "../components/Button";
@@ -24,10 +33,12 @@ import { Skeleton } from "../components/Skeleton";
 import { DEFAULT_LOW_STOCK } from "../constants";
 
 const SORT_META_KEY = "medicines_sort";
+const FILTER_META_KEY = "medicines_filter";
 
 export default function Medicines() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [filter, setFilter] = useState<MedicineFilter>(NO_FILTER);
   const [lowStockThreshold, setLowStockThreshold] = useState(DEFAULT_LOW_STOCK);
   const toast = useToast();
   const { t } = useTranslation();
@@ -43,6 +54,7 @@ export default function Medicines() {
     getMeta(SORT_META_KEY).then((v) => {
       if (v && isSortKey(v)) setSortKey(v);
     });
+    getMeta(FILTER_META_KEY).then((v) => setFilter(parseFilter(v)));
     getMeta("low_stock_threshold").then((v) => {
       const n = v ? Number.parseInt(v, 10) : DEFAULT_LOW_STOCK;
       if (!Number.isNaN(n)) setLowStockThreshold(n);
@@ -56,14 +68,20 @@ export default function Medicines() {
     void setMeta(SORT_META_KEY, key);
   }
 
+  function changeFilter(f: MedicineFilter) {
+    setFilter(f);
+    void setMeta(FILTER_META_KEY, JSON.stringify(f));
+  }
+
   const fuse = useMemo(
     () =>
       medicines
         ? new Fuse(medicines, {
             keys: [
               { name: "name", weight: 0.5 },
-              { name: "category", weight: 0.3 },
-              { name: "storage_location", weight: 0.15 },
+              { name: "category", weight: 0.2 },
+              { name: "active_ingredient", weight: 0.15 },
+              { name: "storage_location", weight: 0.1 },
               { name: "notes", weight: 0.05 },
             ],
             threshold: 0.4,
@@ -75,11 +93,15 @@ export default function Medicines() {
 
   // When the user types a query, results are ordered by Fuse relevance.
   // When idle, the chosen sort takes over.
+  const today = new Date().toISOString().split("T")[0];
   const filtered = useMemo(() => {
     if (!medicines) return [];
-    if (search.trim()) return fuse!.search(search).map((r) => r.item);
-    return [...medicines].sort(comparator(sortKey));
-  }, [fuse, medicines, search, sortKey]);
+    const ordered = search.trim()
+      ? fuse!.search(search).map((r) => r.item)
+      : [...medicines].sort(comparator(sortKey));
+    return ordered.filter((m) => matchesFilter(m, filter, lowStockThreshold, today));
+  }, [fuse, medicines, search, sortKey, filter, lowStockThreshold, today]);
+  const groups = useMemo(() => groupMedicines(filtered), [filtered]);
 
   // Names that appear on more than one card after filtering — used to
   // surface a fallback subtitle so duplicates aren't visually identical
@@ -120,6 +142,11 @@ export default function Medicines() {
           placeholder={t("search.medicines_placeholder")}
         />
       </div>
+      {medicines !== undefined && medicines.length > 1 && (
+        <div style={{ marginBottom: "0.75rem" }}>
+          <FilterBar value={filter} onChange={changeFilter} medicines={medicines} />
+        </div>
+      )}
       {medicines !== undefined && medicines.length > 1 && !search.trim() && (
         <div style={{ marginBottom: "0.75rem" }}>
           <SortBar value={sortKey} onChange={changeSort} />
@@ -151,22 +178,42 @@ export default function Medicines() {
         <EmptyState
           icon="search"
           title={t("medicines.no_matches_title")}
-          description={t("medicines.no_matches_description", { search })}
+          description={
+            search.trim()
+              ? t("medicines.no_matches_description", { search })
+              : t("filter.no_matches")
+          }
         />
       )}
 
       <div className="grid-cards-lg">
-        {filtered.map((m) => (
-          <MedicineCard
-            key={m.id}
-            medicine={m}
-            onAdjust={(delta) => handleAdjust(m.id, delta)}
-            onDelete={() => handleDelete(m.id, m.name)}
-            lowStockThreshold={lowStockThreshold}
-            isAmbiguous={ambiguousNames.has(m.name)}
-            now={now}
-          />
-        ))}
+        {groups.map((g) => {
+          if (g.packs.length > 1) {
+            return (
+              <MedicinePackGroup
+                key={g.key}
+                group={g}
+                onAdjust={handleAdjust}
+                onDelete={handleDelete}
+                lowStockThreshold={lowStockThreshold}
+                today={today}
+                now={now}
+              />
+            );
+          }
+          const m = g.packs[0];
+          return (
+            <MedicineCard
+              key={m.id}
+              medicine={m}
+              onAdjust={(delta) => handleAdjust(m.id, delta)}
+              onDelete={() => handleDelete(m.id, m.name)}
+              lowStockThreshold={lowStockThreshold}
+              isAmbiguous={ambiguousNames.has(m.name)}
+              now={now}
+            />
+          );
+        })}
       </div>
 
       {medicines !== undefined && medicines.length > 0 && (

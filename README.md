@@ -9,13 +9,20 @@ your home network and offline on your phone.
 
 ## What it does
 
-- **Inventory** — name, quantity, unit, category, storage location, notes,
-  barcode, and an optional photo per medicine.
+- **Inventory** — name, active ingredient, quantity, unit, category, storage
+  location, notes, barcode, and an optional photo per medicine.
+- **Filters** — by status (expired, expiring, low stock, opened), category
+  and storage location, on top of fuzzy search and sorting.
+- **Multiple packs** — packs of the same medicine group into one card with
+  the total quantity and the earliest expiry; "Add another pack" copies the
+  details.
+- **Duplicate-ingredient warning** — the form warns when another medicine
+  has the same active ingredient.
 - **Two expiration models** — printed expiration date AND post-opening shelf
   life. The card surfaces whichever fires first ("expires in 12 days" can come
   from either).
-- **Drug autofill** — start typing a trade name; the form pre-fills active
-  ingredients, INN, and pharma group from a shipped pharmaceutical database
+- **Drug autofill** — start typing a trade name; the form pre-fills the
+  active ingredient (INN) and pharma group from a shipped pharmaceutical database
   (currently Ukrainian Державний реєстр; adapter pattern for adding more).
 - **Expiration & low-stock alerts** — separate buckets, configurable
   thresholds (default 30 / 60 / 90 days; default low-stock = 3 units).
@@ -26,8 +33,16 @@ your home network and offline on your phone.
   items with one tap (Web Share API + clipboard fallback).
 - **Multi-user households** — invite by 8-character code or QR; transfer
   ownership; leave or remove members; switch between households.
+- **Disposal and trash** — mark expired medicines as disposed (with
+  take-back guidance); restore anything deleted from the Trash page.
+- **CSV export and printable checklist** — export the inventory to a
+  spreadsheet or print it, optionally for one storage location.
 - **Activity log** — append-only per-household audit of who created /
-  updated / deleted what, who renamed the household, who joined or left.
+  updated / deleted / disposed what, quantity changes ("10 → 7"), who
+  renamed the household, who joined or left. Each medicine shows its own
+  history.
+- **Account control** — registration can be open, invite-only or closed;
+  sign out other devices; delete your account; admin password reset CLI.
 - **Sync** — last-write-wins per record across devices and household
   members; full local cache in IndexedDB; works offline.
 - **Encrypted backup** — export an AES-GCM-encrypted JSON file with a
@@ -100,12 +115,23 @@ project root).
 | `MIGRATIONS_DIR` | no | `./migrations` | Numbered SQL migrations applied at startup. |
 | `STATIC_DIR` | no | `./static` | Built React assets served on `/*`. |
 | `ALLOWED_ORIGINS` | no | `http://localhost:5173` | Comma-separated CORS origins. |
+| `TRUSTED_PROXIES` | no | _empty_ | Comma-separated IPs/CIDRs of reverse proxies (e.g. `127.0.0.1,172.16.0.0/12`). Requests from these peers take the client IP from `X-Forwarded-For`, so per-IP rate limits apply per client. Leave empty when exposed directly. |
 | `PHOTO_DIR` | no | `./data/photos` | Where uploaded medicine photos are written. |
 | `DRUG_DB_DIR` | no | `./data` | Per-country drug DBs live under `<DIR>/<iso>/drugs.db`. |
 | `DRUG_DB_COUNTRY` | no | `ua` | Active country for sync-time autofill. |
 | `BACKUP_DIR` | no | _empty_ | Empty disables scheduled backups. Set to enable. |
 | `BACKUP_RETAIN_DAYS` | no | `14` | Pruning window. `0` keeps forever. |
 | `BACKUP_HOUR` | no | `3` | Hour of day (local time, `0..23`) to run backup. |
+| `REGISTRATION_MODE` | no | `open` | `open`, `invite` (signup needs a household invite code) or `closed` (admin CLI only). The first user can always register. |
+
+### Admin CLI
+
+Reset a forgotten password (prints a new random password and signs the
+user out everywhere):
+
+```bash
+docker compose exec medvault ./medvault reset-password <username>
+```
 
 Static-asset directory layout the binary expects:
 
@@ -178,6 +204,10 @@ TL;DR:
 - [x] Encrypted JSON export (AES-GCM + PBKDF2)
 - [x] Scheduled server-side backups (VACUUM INTO + gzip + retention)
 - [x] Periodic background expiration notifications (PWA)
+- [x] Filters, pack grouping, active ingredient + duplicate warning
+- [x] Trash, disposal, per-medicine history
+- [x] CSV export + printable inventory
+- [x] Registration modes, sign out other devices, account deletion, admin reset
 - [ ] Native Android client
 - [ ] Soft-delete cleanup job (per-server retention)
 - [ ] Per-household autofill country preference

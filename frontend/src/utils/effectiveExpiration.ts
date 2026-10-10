@@ -40,6 +40,32 @@ export function daysUntil(target: string): number {
   return Math.round((targetUTC - todayUTC) / MS_PER_DAY);
 }
 
+export type ExpiryBucket = "expired" | "soon" | "upcoming" | "ok" | "none";
+
+// expiryBucket classifies a medicine's effective expiration against today
+// (YYYY-MM-DD): past, within 30 days, within 90 days, later, or untracked.
+export function expiryBucket(
+  m: {
+    expiration_date: string | null;
+    opened_at: string | null;
+    days_after_opening: number | null;
+  },
+  today: string
+): ExpiryBucket {
+  const eff = effectiveExpiration(m.expiration_date, m.opened_at, m.days_after_opening);
+  if (!eff) return "none";
+  if (eff < today) return "expired";
+  const days = Math.round((utcDay(eff) - utcDay(today)) / MS_PER_DAY);
+  if (days <= 30) return "soon";
+  if (days <= 90) return "upcoming";
+  return "ok";
+}
+
+function utcDay(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
 // Default shelf-life-after-opening for a given unit, in days. Mirrors
 // backend/internal/database/shelflife.go DefaultDaysAfterOpening — keep the
 // two in lockstep. Returns null when no universal default applies.

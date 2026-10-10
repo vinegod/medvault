@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -96,7 +97,7 @@ func (r *RenameHouseholdRequest) Validate() error {
 	if r.Name == "" {
 		return errors.New("name is required")
 	}
-	if len(r.Name) > 80 {
+	if utf8.RuneCountInString(r.Name) > 80 {
 		return errors.New("name must be 80 characters or fewer")
 	}
 	return nil
@@ -123,7 +124,7 @@ func (r *CreateHouseholdRequest) Validate() error {
 	if r.Name == "" {
 		return errors.New("name is required")
 	}
-	if len(r.Name) > 80 {
+	if utf8.RuneCountInString(r.Name) > 80 {
 		return errors.New("name must be 80 characters or fewer")
 	}
 	return nil
