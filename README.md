@@ -77,8 +77,15 @@ cp .env.example .env       # set JWT_SECRET (required)
 docker compose up --build
 ```
 
-Open `http://your-server-ip:8080`. On a phone, **Add to Home Screen** to
-install the PWA.
+Open `http://your-server-ip:8080`. Set `PORT` in `.env` to use another
+port; set `BIND_ADDR=127.0.0.1` when a reverse proxy on the same host
+handles TLS.
+
+Browsers allow the service worker, `crypto.randomUUID`/`crypto.subtle` and
+the clipboard only on HTTPS or `localhost`. Over plain HTTP on a LAN address,
+offline mode, installing the PWA, adding medicines and photo upload do not
+work. Serve MedVault over HTTPS (see [docs/SECURITY.md](docs/SECURITY.md#tls))
+before using it from a phone, then **Add to Home Screen** to install it.
 
 ### Development
 
@@ -110,7 +117,8 @@ project root).
 | `JWT_SECRET` | yes | — | HMAC secret for signing JWTs. Use 32+ random bytes. |
 | `JWT_ACCESS_TTL` | no | `15m` | Access-token lifetime. Go duration format. |
 | `JWT_REFRESH_TTL` | no | `48h` | Refresh-token lifetime. |
-| `PORT` | no | `8080` | HTTP listen port. |
+| `PORT` | no | `8080` | HTTP listen port. Docker compose also publishes it on the host. |
+| `BIND_ADDR` | no | `0.0.0.0` | Docker compose only: host interface the port is published on. |
 | `DB_PATH` | no | `./data/medvault.db` | SQLite database file. |
 | `MIGRATIONS_DIR` | no | `./migrations` | Numbered SQL migrations applied at startup. |
 | `STATIC_DIR` | no | `./static` | Built React assets served on `/*`. |

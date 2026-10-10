@@ -3,8 +3,10 @@ services:
     build: .
     container_name: medvault
     restart: unless-stopped
+    # PORT and BIND_ADDR come from .env. The server listens on PORT inside
+    # the container too, so both sides of the mapping use the same value.
     ports:
-      - "8080:8080"
+      - "${BIND_ADDR:-0.0.0.0}:${PORT:-8080}:${PORT:-8080}"
     volumes:
       - medvault-data:/app/data
     env_file:
