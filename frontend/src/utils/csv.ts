@@ -29,6 +29,9 @@ export function medicinesToCSV(list: Medicine[], t: Translate): string {
   return "﻿" + rows.map((r) => r.map(csvField).join(",")).join("\r\n") + "\r\n";
 }
 
+// csvField quotes s for CSV. A leading ' stops spreadsheet apps from
+// evaluating text that starts like a formula.
 function csvField(s: string): string {
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }

@@ -69,6 +69,17 @@ describe("medicinesToCSV", () => {
     expect(lines[1]).toContain('"Say ""ah"""');
     expect(csv).toContain('"a,b\nc"');
   });
+
+  it("neutralises cells that start like a formula", () => {
+    const csv = medicinesToCSV(
+      [med({ name: '=HYPERLINK("http://x")', notes: "@SUM(A1)", storage_location: "+1" })],
+      (k) => k
+    );
+    const row = csv.slice(1).split("\r\n")[1];
+    expect(row.startsWith(`"'=HYPERLINK(""http://x"")"`)).toBe(true);
+    expect(row).toContain("'@SUM(A1)");
+    expect(row).toContain("'+1");
+  });
 });
 
 describe("expiryBucket", () => {
