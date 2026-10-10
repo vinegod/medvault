@@ -1,14 +1,21 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { db, getActiveMedicines, getLowStockMedicines } from "../services/db";
+import {
+  db,
+  disposeMedicine,
+  getActiveMedicines,
+  getLowStockMedicines,
+  restoreMedicine,
+} from "../services/db";
 import { EmptyState } from "../components/EmptyState";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { SectionHeader } from "../components/SectionHeader";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
-import { effectiveExpiration } from "../utils/effectiveExpiration";
+import { effectiveExpiration, expiryBucket } from "../utils/effectiveExpiration";
 import type { LocalMedicine } from "../types";
 import { DEFAULT_LOW_STOCK } from "../constants";
 
@@ -16,10 +23,12 @@ function MedicineLink({
   m,
   color,
   showQuantity,
+  onDispose,
 }: {
   m: LocalMedicine;
   color: string;
   showQuantity?: boolean;
+  onDispose?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   // Low-stock rows lead with quantity; expiration rows lead with the date.
@@ -29,13 +38,20 @@ function MedicineLink({
     ? `${m.quantity} ${t(`units.${m.unit}`)}`
     : `${m.quantity} ${t(`units.${m.unit}`)} · ${formatExpirationDate(effectiveExp, i18n.language)}`;
   return (
-    <Link to={`/medicines/${m.id}/edit`} style={{ ...item, borderLeftColor: color }}>
-      <div>
-        <strong>{m.name}</strong>
-        <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>{subtitle}</div>
-      </div>
-      <Icon name="edit" size={16} style={{ color: "var(--color-text-muted)" }} />
-    </Link>
+    <div style={{ ...item, borderLeftColor: color }}>
+      <Link to={`/medicines/${m.id}/edit`} style={itemLink}>
+        <div>
+          <strong>{m.name}</strong>
+          <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>{subtitle}</div>
+        </div>
+        <Icon name="edit" size={16} style={{ color: "var(--color-text-muted)" }} />
+      </Link>
+      {onDispose && (
+        <Button variant="secondary" size="sm" onClick={onDispose}>
+          {t("dispose.button")}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -45,12 +61,14 @@ function Section({
   items,
   showQuantity,
   action,
+  onDispose,
 }: {
   title: string;
   color: string;
   items: LocalMedicine[];
   showQuantity?: boolean;
   action?: ReactNode;
+  onDispose?: (m: LocalMedicine) => void;
 }) {
   if (!items.length) return null;
   return (
@@ -58,7 +76,13 @@ function Section({
       <SectionHeader title={title} count={items.length} accentColor={color} action={action} />
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
         {items.map((m) => (
-          <MedicineLink key={m.id} m={m} color={color} showQuantity={showQuantity} />
+          <MedicineLink
+            key={m.id}
+            m={m}
+            color={color}
+            showQuantity={showQuantity}
+            onDispose={onDispose && (() => onDispose(m))}
+          />
         ))}
       </div>
     </div>
@@ -68,6 +92,7 @@ function Section({
 export default function Alerts() {
   const { t, i18n } = useTranslation();
   const toast = useToast();
+  const [disposeTarget, setDisposeTarget] = useState<LocalMedicine | null>(null);
   const threshold =
     useLiveQuery(async () => {
       const r = await db.meta.get("low_stock_threshold");
@@ -86,17 +111,26 @@ export default function Alerts() {
   const soon: LocalMedicine[] = [];
   const upcoming: LocalMedicine[] = [];
   for (const m of all) {
-    const eff = effectiveExpiration(m.expiration_date, m.opened_at, m.days_after_opening);
-    if (!eff) continue;
-    if (eff < today) expired.push(m);
-    else {
-      const days = daysUntil(eff, today);
-      if (days <= 30) soon.push(m);
-      else if (days <= 90) upcoming.push(m);
-    }
+    const bucket = expiryBucket(m, today);
+    if (bucket === "expired") expired.push(m);
+    else if (bucket === "soon") soon.push(m);
+    else if (bucket === "upcoming") upcoming.push(m);
   }
 
   const total = expired.length + soon.length + upcoming.length + lowStock.length;
+
+  async function handleDispose() {
+    const m = disposeTarget;
+    setDisposeTarget(null);
+    if (!m) return;
+    await disposeMedicine(m.id);
+    toast.success(t("dispose.done", { name: m.name }), {
+      actionLabel: t("common.undo"),
+      onAction: () => {
+        restoreMedicine(m.id);
+      },
+    });
+  }
 
   async function handleExportShoppingList() {
     const lines = buildShoppingList(t, i18n.language, expired, soon, lowStock);
@@ -166,6 +200,7 @@ export default function Alerts() {
         color="var(--color-error)"
         items={expired}
         action={expired.length ? takeExport() : undefined}
+        onDispose={setDisposeTarget}
       />
       <Section
         title={t("alerts.expiring_30")}
@@ -174,6 +209,15 @@ export default function Alerts() {
         action={soon.length ? takeExport() : undefined}
       />
       <Section title={t("alerts.expiring_90")} color="var(--color-text-muted)" items={upcoming} />
+      <ConfirmDialog
+        open={disposeTarget !== null}
+        title={t("dispose.confirm_title", { name: disposeTarget?.name ?? "" })}
+        description={t("dispose.hint")}
+        confirmLabel={t("dispose.button")}
+        destructive
+        onConfirm={handleDispose}
+        onCancel={() => setDisposeTarget(null)}
+      />
     </div>
   );
 }
@@ -222,24 +266,22 @@ function formatExpirationDate(iso: string | null, lang: string): string {
   });
 }
 
-// daysUntil returns the integer days between two YYYY-MM-DD strings, treating
-// both as UTC midnight. Used to bucket within-90-days into within-30-days.
-function daysUntil(target: string, from: string): number {
-  if (!target) return Number.MAX_SAFE_INTEGER;
-  const [ty, tm, td] = target.split("-").map(Number);
-  const [fy, fm, fd] = from.split("-").map(Number);
-  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
-}
-
 const item: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
-  justifyContent: "space-between",
+  gap: "0.75rem",
   background: "var(--color-surface)",
   border: "1px solid var(--color-border)",
   borderLeft: "3px solid",
   borderRadius: "var(--radius)",
   padding: "0.75rem 1rem",
+};
+const itemLink: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  flex: 1,
+  minWidth: 0,
   textDecoration: "none",
   color: "var(--color-text)",
 };

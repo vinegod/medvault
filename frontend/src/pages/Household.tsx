@@ -12,6 +12,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Skeleton } from "../components/Skeleton";
 import type { HouseholdDetail, Invite, AuditEntry } from "../types";
+import { AuditList } from "../components/AuditList";
 
 export default function Household() {
   const { user, refreshHouseholds } = useAuth();
@@ -386,40 +387,9 @@ export default function Household() {
           />
         </button>
         {auditOpen && (
-          <ul style={{ listStyle: "none", marginTop: "0.75rem" }}>
-            {audit.length === 0 && (
-              <li style={{ color: "var(--color-text-muted)", fontSize: "0.85rem" }}>
-                {t("household.activity_empty")}
-              </li>
-            )}
-            {audit.map((e) => (
-              <li key={e.id} style={auditRow}>
-                <div>
-                  <strong>{e.username}</strong>{" "}
-                  <span style={{ color: "var(--color-text-muted)" }}>
-                    {t(`household.audit.${e.action}`, {
-                      defaultValue: e.action,
-                      target: e.target_name ?? "",
-                    })}
-                  </span>
-                  {e.target_name && (
-                    <span style={{ marginLeft: "0.4rem" }}>
-                      <em>{e.target_name}</em>
-                    </span>
-                  )}
-                </div>
-                <span
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "var(--color-text-muted)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {new Date(e.at).toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div style={{ marginTop: "0.75rem" }}>
+            <AuditList entries={audit} />
+          </div>
         )}
       </section>
 
@@ -596,15 +566,6 @@ const qrFrame: React.CSSProperties = {
   marginTop: "0.5rem",
   padding: "0.75rem",
   borderRadius: "var(--radius)",
-};
-const auditRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: "0.5rem",
-  padding: "0.5rem 0",
-  borderBottom: "1px solid var(--color-border)",
-  fontSize: "0.85rem",
 };
 const inviteRow: React.CSSProperties = {
   display: "flex",

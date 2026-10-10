@@ -46,11 +46,17 @@ func Logging(next http.Handler) http.Handler {
 			remote = host
 		}
 
+		// A handler that writes nothing gets an implicit 200 from net/http.
+		status := rec.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+
 		slog.Info("request",
 			"req_id", RequestIDFrom(r.Context()),
 			"method", r.Method,
 			"path", r.URL.Path,
-			"status", rec.status,
+			"status", status,
 			"bytes", rec.bytes,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"remote", remote,

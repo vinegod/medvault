@@ -31,7 +31,8 @@ interface AuthContextValue {
     url: string,
     username: string,
     password: string,
-    isRegister: boolean
+    isRegister: boolean,
+    inviteCode?: string
   ) => Promise<{ success: boolean; error?: string }>;
   disconnect: () => Promise<void>;
 
@@ -100,8 +101,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [status, refreshHouseholds]);
 
   const connect = useCallback(
-    async (url: string, username: string, password: string, isRegister: boolean) => {
-      const result = await connectToServer(url, username, password, isRegister);
+    async (
+      url: string,
+      username: string,
+      password: string,
+      isRegister: boolean,
+      inviteCode?: string
+    ) => {
+      const result = await connectToServer(url, username, password, isRegister, inviteCode);
       if (result.success) {
         const [id, name, sUrl] = await Promise.all([
           getMeta("user_id"),

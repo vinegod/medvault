@@ -11,7 +11,7 @@ const tabDefs: { to: string; labelKey: string; icon: IconName }[] = [
 export function BottomNav() {
   const { t } = useTranslation();
   return (
-    <nav style={nav}>
+    <nav className="no-print" style={nav}>
       {tabDefs.map((tab) => (
         <NavLink
           key={tab.to}

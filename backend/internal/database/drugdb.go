@@ -120,18 +120,3 @@ func openReadOnly(path string) (*sql.DB, error) {
 	}
 	return db, nil
 }
-
-// JoinDrugNotes is the canonical formatter for the medicine `notes` field
-// when it's filled from a drug DB row. Same shape on client and server:
-// INN on the first line, pharma group on the second, either part may be
-// omitted if missing.
-func JoinDrugNotes(inn, pharmaGroup string) string {
-	parts := make([]string, 0, 2)
-	if s := strings.TrimSpace(inn); s != "" {
-		parts = append(parts, s)
-	}
-	if s := strings.TrimSpace(pharmaGroup); s != "" {
-		parts = append(parts, s)
-	}
-	return strings.Join(parts, "\n")
-}

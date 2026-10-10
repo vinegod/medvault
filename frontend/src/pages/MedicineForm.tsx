@@ -1,19 +1,28 @@
-import { useState, useEffect, useId, useRef, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useState, useEffect, useId, useMemo, useRef, type FormEvent } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useLiveQuery } from "dexie-react-hooks";
 import {
   addMedicine,
   updateMedicine,
   getMedicineById,
   getDistinctCategories,
+  getActiveMedicines,
+  disposeMedicine,
+  restoreMedicine,
 } from "../services/db";
+import { apiClient } from "../services/api";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { AuditList } from "../components/AuditList";
 import { useToast } from "../contexts/ToastContext";
-import { NameSuggest, joinDrugNotes } from "../components/NameSuggest";
+import { useAuth } from "../contexts/AuthContext";
+import { NameSuggest } from "../components/NameSuggest";
 import { resizeImage, uploadPhoto, fetchPhoto, deletePhoto } from "../services/photos";
 import { defaultDaysAfterOpening } from "../utils/effectiveExpiration";
-import type { MedicineInput, MedicineUnit } from "../types";
+import { sharedIngredient } from "../utils/ingredients";
+import type { AuditEntry, MedicineInput, MedicineUnit } from "../types";
 
 const UNITS: MedicineUnit[] = [
   "tablets",
@@ -32,6 +41,7 @@ const EMPTY: MedicineInput = {
   quantity: 0,
   unit: "tablets",
   category: "",
+  active_ingredient: "",
   expiration_date: "",
   opened_at: "",
   days_after_opening: null,
@@ -42,10 +52,16 @@ const EMPTY: MedicineInput = {
 
 export default function MedicineForm() {
   const { id } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
+  const copyFrom = searchParams.get("copy");
   const navigate = useNavigate();
   const toast = useToast();
   const { t } = useTranslation();
+  const { status } = useAuth();
   const isEdit = Boolean(id);
+  const [confirmDispose, setConfirmDispose] = useState(false);
+  const [history, setHistory] = useState<AuditEntry[] | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const [fields, setFields] = useState<MedicineInput>(EMPTY);
   const [error, setError] = useState("");
@@ -77,6 +93,7 @@ export default function MedicineForm() {
           quantity: m.quantity,
           unit: m.unit,
           category: m.category,
+          active_ingredient: m.active_ingredient ?? "",
           expiration_date: m.expiration_date ?? "",
           opened_at: m.opened_at ?? "",
           days_after_opening: m.days_after_opening,
@@ -88,6 +105,52 @@ export default function MedicineForm() {
       }
     });
   }, [id]);
+
+  // "Add pack": start from another pack's identity, leaving quantity and dates blank.
+  useEffect(() => {
+    if (id || !copyFrom) return;
+    getMedicineById(copyFrom).then((m) => {
+      if (!m) return;
+      setFields({
+        ...EMPTY,
+        name: m.name,
+        unit: m.unit,
+        category: m.category,
+        active_ingredient: m.active_ingredient ?? "",
+        days_after_opening: m.days_after_opening,
+        storage_location: m.storage_location,
+      });
+    });
+  }, [id, copyFrom]);
+
+  const active = useLiveQuery(() => getActiveMedicines(), []);
+  const sameIngredient = useMemo(() => {
+    if (!active) return [];
+    const names = active
+      .filter((m) => m.id !== id && sharedIngredient(fields.active_ingredient, m.active_ingredient))
+      .map((m) => m.name);
+    return [...new Set(names)];
+  }, [active, id, fields.active_ingredient]);
+
+  async function toggleHistory() {
+    setHistoryOpen((v) => !v);
+    if (history || !id) return;
+    const res = await apiClient.get<AuditEntry[]>(`/api/medicines/${id}/history`);
+    setHistory(res.data ?? []);
+  }
+
+  async function handleDispose() {
+    if (!id) return;
+    setConfirmDispose(false);
+    await disposeMedicine(id);
+    toast.success(t("dispose.done", { name: fields.name }), {
+      actionLabel: t("common.undo"),
+      onAction: () => {
+        restoreMedicine(id);
+      },
+    });
+    navigate("/medicines");
+  }
 
   // Resolve the photo to a Blob URL whenever a hash is present. Cleanup
   // revokes the URL on hash change / unmount. When photoHash transitions
@@ -210,221 +273,291 @@ export default function MedicineForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={formStyle}>
-      <Field label={t("medicine_form.name")} required>
-        <NameSuggest
-          value={fields.name}
-          onChange={(v) => set("name", v)}
-          onPick={(s) =>
-            setFields((f) => ({
-              ...f,
-              name: s.name,
-              category: f.category === "" ? (s.ingredients ?? "") : f.category,
-              notes: f.notes === "" ? joinDrugNotes(s.inn, s.pharma_group) : f.notes,
-            }))
-          }
-          placeholder={t("medicine_form.name_placeholder")}
-          maxLength={200}
-          required
-          autoFocus={!isEdit}
-          inputStyle={inp}
-        />
-      </Field>
-
-      <div style={{ display: "flex", gap: "0.75rem" }}>
-        <Field label={t("medicine_form.quantity")} style={{ flex: 1 }}>
-          <input
-            style={inp}
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={99999}
-            value={fields.quantity}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              set("quantity", Number.isNaN(n) ? 0 : Math.max(0, n));
-            }}
+    <>
+      <form onSubmit={handleSubmit} style={formStyle}>
+        <Field label={t("medicine_form.name")} required>
+          <NameSuggest
+            value={fields.name}
+            onChange={(v) => set("name", v)}
+            onPick={(s) =>
+              setFields((f) => ({
+                ...f,
+                name: s.name,
+                active_ingredient:
+                  f.active_ingredient === "" ? (s.inn ?? s.ingredients ?? "") : f.active_ingredient,
+                notes: f.notes === "" ? (s.pharma_group ?? "") : f.notes,
+              }))
+            }
+            placeholder={t("medicine_form.name_placeholder")}
+            maxLength={200}
+            required
+            autoFocus={!isEdit}
+            inputStyle={inp}
           />
         </Field>
-        <Field label={t("medicine_form.unit")} style={{ flex: 1 }}>
-          <select
+
+        <Field label={t("medicine_form.active_ingredient")}>
+          <input
             style={inp}
-            value={fields.unit}
-            onChange={(e) => changeUnit(e.target.value as MedicineUnit)}
-          >
-            {UNITS.map((u) => (
-              <option key={u} value={u}>
-                {t(`units.${u}`)}
-              </option>
-            ))}
-          </select>
+            value={fields.active_ingredient}
+            onChange={(e) => set("active_ingredient", e.target.value)}
+            placeholder={t("medicine_form.active_ingredient_placeholder")}
+            maxLength={200}
+          />
+          {sameIngredient.length > 0 && (
+            <small role="status" style={warning}>
+              <Icon name="warning" size={14} />
+              {t("medicine_form.same_ingredient", { names: sameIngredient.join(", ") })}
+            </small>
+          )}
         </Field>
-      </div>
 
-      <Field label={t("medicine_form.category")}>
-        <input
-          style={inp}
-          value={fields.category}
-          onChange={(e) => set("category", e.target.value)}
-          placeholder={t("medicine_form.category_placeholder")}
-          maxLength={50}
-          list={categoryListId}
-          autoComplete="off"
-        />
-        <datalist id={categoryListId}>
-          {categorySuggestions.map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
-      </Field>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <Field label={t("medicine_form.quantity")} style={{ flex: 1 }}>
+            <input
+              style={inp}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={99999}
+              value={fields.quantity}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                set("quantity", Number.isNaN(n) ? 0 : Math.max(0, n));
+              }}
+            />
+          </Field>
+          <Field label={t("medicine_form.unit")} style={{ flex: 1 }}>
+            <select
+              style={inp}
+              value={fields.unit}
+              onChange={(e) => changeUnit(e.target.value as MedicineUnit)}
+            >
+              {UNITS.map((u) => (
+                <option key={u} value={u}>
+                  {t(`units.${u}`)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
 
-      <Field label={t("medicine_form.expiration_date")}>
-        <input
-          style={inp}
-          type="date"
-          value={fields.expiration_date ?? ""}
-          onChange={(e) => set("expiration_date", e.target.value)}
-        />
-      </Field>
+        <Field label={t("medicine_form.category")}>
+          <input
+            style={inp}
+            value={fields.category}
+            onChange={(e) => set("category", e.target.value)}
+            placeholder={t("medicine_form.category_placeholder")}
+            maxLength={50}
+            list={categoryListId}
+            autoComplete="off"
+          />
+          <datalist id={categoryListId}>
+            {categorySuggestions.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </Field>
 
-      <div style={{ display: "flex", gap: "0.75rem" }}>
-        <Field label={t("medicine_form.opened_at")} style={{ flex: 1 }}>
+        <Field label={t("medicine_form.expiration_date")}>
           <input
             style={inp}
             type="date"
-            value={fields.opened_at ?? ""}
-            onChange={(e) => set("opened_at", e.target.value)}
+            value={fields.expiration_date ?? ""}
+            onChange={(e) => set("expiration_date", e.target.value)}
           />
         </Field>
-        <Field label={t("medicine_form.days_after_opening")} style={{ flex: 1 }}>
+
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <Field label={t("medicine_form.opened_at")} style={{ flex: 1 }}>
+            <input
+              style={inp}
+              type="date"
+              value={fields.opened_at ?? ""}
+              onChange={(e) => set("opened_at", e.target.value)}
+            />
+          </Field>
+          <Field label={t("medicine_form.days_after_opening")} style={{ flex: 1 }}>
+            <input
+              style={inp}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={3650}
+              value={fields.days_after_opening ?? ""}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") {
+                  set("days_after_opening", null);
+                  return;
+                }
+                const n = Number(raw);
+                set("days_after_opening", Number.isNaN(n) ? null : n);
+              }}
+              placeholder={t("medicine_form.days_after_opening_placeholder")}
+            />
+          </Field>
+        </div>
+
+        <Field label={t("medicine_form.storage_location")}>
           <input
             style={inp}
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={3650}
-            value={fields.days_after_opening ?? ""}
-            onChange={(e) => {
-              const raw = e.target.value;
-              if (raw === "") {
-                set("days_after_opening", null);
-                return;
-              }
-              const n = Number(raw);
-              set("days_after_opening", Number.isNaN(n) ? null : n);
-            }}
-            placeholder={t("medicine_form.days_after_opening_placeholder")}
+            value={fields.storage_location}
+            onChange={(e) => set("storage_location", e.target.value)}
+            placeholder={t("medicine_form.storage_placeholder")}
+            maxLength={100}
           />
         </Field>
-      </div>
 
-      <Field label={t("medicine_form.storage_location")}>
-        <input
-          style={inp}
-          value={fields.storage_location}
-          onChange={(e) => set("storage_location", e.target.value)}
-          placeholder={t("medicine_form.storage_placeholder")}
-          maxLength={100}
-        />
-      </Field>
-
-      <Field label={t("medicine_form.barcode")}>
-        <input
-          style={inp}
-          value={fields.barcode}
-          onChange={(e) => set("barcode", e.target.value)}
-          placeholder={t("medicine_form.barcode_placeholder")}
-          maxLength={50}
-        />
-      </Field>
-
-      <Field label={t("medicine_form.notes")}>
-        <textarea
-          style={{ ...inp, resize: "vertical", minHeight: 80 }}
-          value={fields.notes}
-          onChange={(e) => set("notes", e.target.value)}
-          placeholder={t("medicine_form.notes_placeholder")}
-          maxLength={500}
-        />
-        <small
-          style={{
-            color: fields.notes.length > 480 ? "var(--color-error)" : "var(--color-text-muted)",
-            fontSize: "0.78rem",
-          }}
-        >
-          {t("medicine_form.notes_counter", { count: fields.notes.length })}
-        </small>
-      </Field>
-
-      {/* Photo: only available on existing medicines (needs an id for the
-          upload endpoint). Hidden on create until the user saves once. */}
-      {isEdit && (
-        <Field label={t("medicine_form.photo")}>
+        <Field label={t("medicine_form.barcode")}>
           <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handlePhotoFile(file);
-              e.target.value = "";
-            }}
+            style={inp}
+            value={fields.barcode}
+            onChange={(e) => set("barcode", e.target.value)}
+            placeholder={t("medicine_form.barcode_placeholder")}
+            maxLength={50}
           />
-          {photoUrl && (
-            <img
-              src={photoUrl}
-              alt={t("medicine_form.photo_alt")}
-              style={{
-                width: "100%",
-                maxHeight: 240,
-                objectFit: "contain",
-                background: "var(--color-bg)",
-                borderRadius: "var(--radius)",
-                border: "1px solid var(--color-border)",
-                marginBottom: "0.5rem",
+        </Field>
+
+        <Field label={t("medicine_form.notes")}>
+          <textarea
+            style={{ ...inp, resize: "vertical", minHeight: 80 }}
+            value={fields.notes}
+            onChange={(e) => set("notes", e.target.value)}
+            placeholder={t("medicine_form.notes_placeholder")}
+            maxLength={500}
+          />
+          <small
+            style={{
+              color: fields.notes.length > 480 ? "var(--color-error)" : "var(--color-text-muted)",
+              fontSize: "0.78rem",
+            }}
+          >
+            {t("medicine_form.notes_counter", { count: fields.notes.length })}
+          </small>
+        </Field>
+
+        {/* Photo: only available on existing medicines (needs an id for the
+          upload endpoint). Hidden on create until the user saves once. */}
+        {isEdit && (
+          <Field label={t("medicine_form.photo")}>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handlePhotoFile(file);
+                e.target.value = "";
               }}
             />
-          )}
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => photoInputRef.current?.click()}
-              disabled={photoBusy}
-              iconLeft={<Icon name="upload" size={14} />}
-            >
-              {photoHash ? t("medicine_form.photo_replace") : t("medicine_form.photo_attach")}
-            </Button>
-            {photoHash && (
+            {photoUrl && (
+              <img
+                src={photoUrl}
+                alt={t("medicine_form.photo_alt")}
+                style={{
+                  width: "100%",
+                  maxHeight: 240,
+                  objectFit: "contain",
+                  background: "var(--color-bg)",
+                  borderRadius: "var(--radius)",
+                  border: "1px solid var(--color-border)",
+                  marginBottom: "0.5rem",
+                }}
+              />
+            )}
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <Button
                 type="button"
-                variant="danger"
+                variant="secondary"
                 size="sm"
-                onClick={handlePhotoRemove}
+                onClick={() => photoInputRef.current?.click()}
                 disabled={photoBusy}
-                iconLeft={<Icon name="trash" size={14} />}
+                iconLeft={<Icon name="upload" size={14} />}
               >
-                {t("medicine_form.photo_remove")}
+                {photoHash ? t("medicine_form.photo_replace") : t("medicine_form.photo_attach")}
               </Button>
-            )}
-          </div>
-        </Field>
+              {photoHash && (
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={handlePhotoRemove}
+                  disabled={photoBusy}
+                  iconLeft={<Icon name="trash" size={14} />}
+                >
+                  {t("medicine_form.photo_remove")}
+                </Button>
+              )}
+            </div>
+          </Field>
+        )}
+
+        {isEdit && status === "connected" && (
+          <section>
+            <button
+              type="button"
+              onClick={toggleHistory}
+              style={historyToggle}
+              aria-expanded={historyOpen}
+            >
+              <span>{t("medicine_form.history")}</span>
+              <Icon
+                name="chevron-down"
+                size={18}
+                style={{
+                  transform: historyOpen ? "rotate(180deg)" : "none",
+                  transition: "transform 120ms",
+                }}
+              />
+            </button>
+            {historyOpen &&
+              (history ? (
+                <AuditList entries={history} />
+              ) : (
+                <p style={{ color: "var(--color-text-muted)", fontSize: "0.85rem" }}>
+                  {t("common.loading")}
+                </p>
+              ))}
+          </section>
+        )}
+
+        {error && <p style={{ color: "var(--color-error)", fontSize: "0.9rem" }}>{error}</p>}
+
+        <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
+          <Button type="button" variant="secondary" onClick={() => navigate(-1)} fullWidth>
+            {t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="primary" disabled={loading} fullWidth>
+            {loading ? t("medicine_form.saving") : isEdit ? t("common.save") : t("common.add")}
+          </Button>
+        </div>
+      </form>
+
+      {isEdit && (
+        <Button
+          type="button"
+          variant="danger"
+          style={{ marginTop: "1.5rem", width: "100%" }}
+          onClick={() => setConfirmDispose(true)}
+          iconLeft={<Icon name="trash" size={16} />}
+        >
+          {t("dispose.button")}
+        </Button>
       )}
 
-      {error && <p style={{ color: "var(--color-error)", fontSize: "0.9rem" }}>{error}</p>}
-
-      <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
-        <Button type="button" variant="secondary" onClick={() => navigate(-1)} fullWidth>
-          {t("common.cancel")}
-        </Button>
-        <Button type="submit" variant="primary" disabled={loading} fullWidth>
-          {loading ? t("medicine_form.saving") : isEdit ? t("common.save") : t("common.add")}
-        </Button>
-      </div>
-    </form>
+      <ConfirmDialog
+        open={confirmDispose}
+        title={t("dispose.confirm_title", { name: fields.name })}
+        description={t("dispose.hint")}
+        confirmLabel={t("dispose.button")}
+        destructive
+        onConfirm={handleDispose}
+        onCancel={() => setConfirmDispose(false)}
+      />
+    </>
   );
 }
 
@@ -450,6 +583,26 @@ function Field({
   );
 }
 
+const warning: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "0.35rem",
+  color: "var(--color-warning)",
+  fontSize: "0.8rem",
+};
+const historyToggle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  width: "100%",
+  background: "transparent",
+  border: "none",
+  color: "var(--color-text)",
+  fontSize: "0.95rem",
+  fontWeight: 600,
+  padding: "0.5rem 0",
+  cursor: "pointer",
+};
 const formStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "1rem" };
 const lblStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: "0.35rem" };
 const inp: React.CSSProperties = {

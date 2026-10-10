@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -157,6 +158,7 @@ func (h *HouseholdHandler) CreateInvite(w http.ResponseWriter, r *http.Request) 
 // Redeems an invite code and adds the caller as a member of that household.
 func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 	callerID := middleware.UserIDFrom(r.Context())
+	username := middleware.UsernameFrom(r.Context())
 
 	var req models.JoinRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -168,44 +170,6 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var invite models.Invite
-	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT code, household_id, invited_by, expires_at, used_at
-		 FROM household_invites
-		 WHERE code = ?
-		   AND used_at    IS NULL
-		   AND revoked_at IS NULL
-		   AND expires_at > ?`,
-		req.Code, time.Now().UTC(),
-	).Scan(
-		&invite.Code, &invite.HouseholdID, &invite.InvitedBy,
-		&invite.ExpiresAt, &invite.UsedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "invalid or expired invite code")
-		return
-	}
-	if err != nil {
-		api.ServerError(w, "Join: query invite", err)
-		return
-	}
-
-	// Check if the caller is already a member of this household.
-	var existing int
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM memberships WHERE user_id = ? AND household_id = ?`,
-		callerID, invite.HouseholdID,
-	).Scan(&existing); err != nil {
-		api.ServerError(w, "Join: check existing membership", err)
-		return
-	}
-	if existing > 0 {
-		api.WriteError(w, http.StatusConflict, models.CodeConflict, "already a member of this household")
-		return
-	}
-
-	now := time.Now().UTC()
-
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		api.ServerError(w, "Join: begin tx", err)
@@ -213,31 +177,16 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after Commit; error intentionally discarded
 
-	if _, err = tx.ExecContext(r.Context(),
-		`INSERT INTO memberships (user_id, household_id, role, joined_at)
-		 VALUES (?, ?, ?, ?)`,
-		callerID, invite.HouseholdID, models.RoleMember, now,
-	); err != nil {
-		api.ServerError(w, "Join: insert membership", err)
+	householdID, err := joinWithInvite(r.Context(), tx, req.Code, callerID, username, time.Now().UTC())
+	switch {
+	case errors.Is(err, errInviteInvalid):
+		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "invalid or expired invite code")
 		return
-	}
-
-	if _, err = tx.ExecContext(r.Context(),
-		`UPDATE household_invites SET used_at = ?, used_by = ? WHERE code = ?`,
-		now, callerID, invite.Code,
-	); err != nil {
-		api.ServerError(w, "Join: mark invite used", err)
+	case errors.Is(err, errAlreadyMember):
+		api.WriteError(w, http.StatusConflict, models.CodeConflict, "already a member of this household")
 		return
-	}
-
-	// Auto-switch the caller's active household to the one they just joined.
-	// This matches the frontend JoinHousehold flow which clears the local
-	// cache and re-syncs immediately, expecting to see the joined data.
-	if _, err = tx.ExecContext(r.Context(),
-		`UPDATE users SET active_household_id = ? WHERE id = ?`,
-		invite.HouseholdID, callerID,
-	); err != nil {
-		api.ServerError(w, "Join: set active household", err)
+	case err != nil:
+		api.ServerError(w, "Join", err)
 		return
 	}
 
@@ -246,15 +195,74 @@ func (h *HouseholdHandler) Join(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Audit outside the tx — the join already succeeded; an audit-write
-	// failure shouldn't unwind it.
-	username := middleware.UsernameFrom(r.Context())
-	WriteAudit(r.Context(), h.DB, invite.HouseholdID, callerID, username,
-		"household.member.add", "user", &callerID, &username)
-
 	api.WriteJSON(w, http.StatusOK, map[string]string{
-		"household_id": invite.HouseholdID,
+		"household_id": householdID,
 	})
+}
+
+var (
+	errInviteInvalid = errors.New("invalid or expired invite code")
+	errAlreadyMember = errors.New("already a member of this household")
+)
+
+// joinWithInvite consumes an invite code inside tx, makes userID a member
+// of its household, sets it as their active household and logs the join.
+// It returns the household id.
+func joinWithInvite(ctx context.Context, tx *sql.Tx, code, userID, username string, now time.Time) (string, error) {
+	// Checking and consuming in one UPDATE stops a code being redeemed twice.
+	var householdID string
+	err := tx.QueryRowContext(ctx,
+		`UPDATE household_invites SET used_at = ?, used_by = ?
+		  WHERE code = ?
+		    AND used_at    IS NULL
+		    AND revoked_at IS NULL
+		    AND expires_at > ?
+		 RETURNING household_id`,
+		now, userID, strings.TrimSpace(code), now,
+	).Scan(&householdID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errInviteInvalid
+	}
+	if err != nil {
+		return "", fmt.Errorf("redeem invite: %w", err)
+	}
+
+	var existing int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM memberships WHERE user_id = ? AND household_id = ?`,
+		userID, householdID,
+	).Scan(&existing); err != nil {
+		return "", fmt.Errorf("check existing membership: %w", err)
+	}
+	if existing > 0 {
+		return "", errAlreadyMember
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO memberships (user_id, household_id, role, joined_at)
+		 VALUES (?, ?, ?, ?)`,
+		userID, householdID, models.RoleMember, now,
+	); err != nil {
+		return "", fmt.Errorf("insert membership: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET active_household_id = ? WHERE id = ?`,
+		householdID, userID,
+	); err != nil {
+		return "", fmt.Errorf("set active household: %w", err)
+	}
+
+	WriteAudit(ctx, tx, &auditEvent{
+		HouseholdID: householdID,
+		UserID:      userID,
+		Username:    username,
+		Action:      "household.member.add",
+		TargetType:  "user",
+		TargetID:    &userID,
+		TargetName:  &username,
+	})
+	return householdID, nil
 }
 
 // RemoveMember handles DELETE /api/households/{id}/members/{user_id}.
@@ -300,9 +308,15 @@ func (h *HouseholdHandler) RemoveMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	WriteAudit(r.Context(), h.DB, householdID, callerID,
-		middleware.UsernameFrom(r.Context()),
-		"household.member.remove", "user", &targetID, &targetUsername)
+	WriteAudit(r.Context(), h.DB, &auditEvent{
+		HouseholdID: householdID,
+		UserID:      callerID,
+		Username:    middleware.UsernameFrom(r.Context()),
+		Action:      "household.member.remove",
+		TargetType:  "user",
+		TargetID:    &targetID,
+		TargetName:  &targetUsername,
+	})
 
 	api.WriteJSON(w, http.StatusOK, nil)
 }
@@ -490,10 +504,15 @@ func (h *HouseholdHandler) Rename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteAudit(r.Context(), h.DB, householdID,
-		middleware.UserIDFrom(r.Context()),
-		middleware.UsernameFrom(r.Context()),
-		"household.rename", "household", &householdID, &req.Name)
+	WriteAudit(r.Context(), h.DB, &auditEvent{
+		HouseholdID: householdID,
+		UserID:      middleware.UserIDFrom(r.Context()),
+		Username:    middleware.UsernameFrom(r.Context()),
+		Action:      "household.rename",
+		TargetType:  "household",
+		TargetID:    &householdID,
+		TargetName:  &req.Name,
+	})
 
 	api.WriteJSON(w, http.StatusOK, map[string]any{
 		"id":         householdID,
@@ -676,9 +695,15 @@ func (h *HouseholdHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 	_ = h.DB.QueryRowContext(r.Context(),
 		`SELECT username FROM users WHERE id = ?`, req.ToUserID,
 	).Scan(&newOwnerName)
-	WriteAudit(r.Context(), h.DB, householdID, callerID,
-		middleware.UsernameFrom(r.Context()),
-		"household.transfer", "user", &req.ToUserID, &newOwnerName)
+	WriteAudit(r.Context(), h.DB, &auditEvent{
+		HouseholdID: householdID,
+		UserID:      callerID,
+		Username:    middleware.UsernameFrom(r.Context()),
+		Action:      "household.transfer",
+		TargetType:  "user",
+		TargetID:    &req.ToUserID,
+		TargetName:  &newOwnerName,
+	})
 
 	api.WriteJSON(w, http.StatusOK, nil)
 }

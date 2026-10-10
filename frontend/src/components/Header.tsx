@@ -21,6 +21,8 @@ export function Header() {
     "/household": { title: t("header.household"), back: true },
     "/household/new": { title: t("header.create_household"), back: true },
     "/household/join": { title: t("header.join_household"), back: true },
+    "/trash": { title: t("header.trash"), back: true },
+    "/inventory/print": { title: t("header.inventory"), back: true },
     "/onboarding/household": { title: t("header.fallback") },
   };
 
@@ -37,7 +39,7 @@ export function Header() {
   const activeHousehold = households.find((h) => h.is_active);
 
   return (
-    <header style={header}>
+    <header className="no-print" style={header}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0, flex: 1 }}>
         {entry.back && (
           <button onClick={() => navigate(-1)} style={backBtn} aria-label={t("header.go_back")}>

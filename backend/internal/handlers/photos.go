@@ -105,9 +105,9 @@ func (h *PhotoHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE medicines SET photo_hash = ?, updated_at = ?
+		`UPDATE medicines SET photo_hash = ?, updated_at = ?, synced_at = ?
 		 WHERE id = ? AND household_id = ?`,
-		hash, now, id, householdID,
+		hash, now, now, id, householdID,
 	); err != nil {
 		api.ServerError(w, "Photo upload: update row", err)
 		return
@@ -156,7 +156,8 @@ func (h *PhotoHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "image/jpeg")
+	// No Content-Type: ServeContent sniffs it from the bytes. Upload accepts
+	// any sniffed image/* type, so hardcoding image/jpeg mislabels PNGs etc.
 	w.Header().Set("ETag", `"`+hash.String+`"`)
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	http.ServeContent(w, r, "", info.ModTime(), f)
@@ -172,9 +173,9 @@ func (h *PhotoHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	res, err := h.DB.ExecContext(r.Context(),
-		`UPDATE medicines SET photo_hash = NULL, updated_at = ?
+		`UPDATE medicines SET photo_hash = NULL, updated_at = ?, synced_at = ?
 		 WHERE id = ? AND household_id = ? AND deleted_at IS NULL`,
-		now, id, householdID,
+		now, now, id, householdID,
 	)
 	if err != nil {
 		api.ServerError(w, "Photo delete: update", err)

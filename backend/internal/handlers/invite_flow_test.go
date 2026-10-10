@@ -31,17 +31,25 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWithMode(t, handlers.RegistrationOpen)
+}
+
+// newHarnessWithMode is newHarness with the given registration mode.
+func newHarnessWithMode(t *testing.T, registrationMode string) *harness {
+	t.Helper()
 	db := testutil.NewDB(t)
 
 	authH := &handlers.AuthHandler{
-		DB:         db,
-		JWTSecret:  testutil.JWTSecret,
-		AccessTTL:  time.Hour,
-		RefreshTTL: 24 * time.Hour,
+		DB:               db,
+		JWTSecret:        testutil.JWTSecret,
+		AccessTTL:        time.Hour,
+		RefreshTTL:       24 * time.Hour,
+		RegistrationMode: registrationMode,
 	}
 	medH := &handlers.MedicineHandler{DB: db}
 	hhH := &handlers.HouseholdHandler{DB: db}
 	syncH := &handlers.SyncHandler{DB: db}
+	auditH := &handlers.AuditHandler{DB: db}
 
 	r := chi.NewRouter()
 	r.Post("/api/auth/register", authH.Register)
@@ -54,6 +62,9 @@ func newHarness(t *testing.T) *harness {
 
 		// Per-user, no household middleware.
 		r.Post("/api/auth/password", authH.ChangePassword)
+		r.Post("/api/auth/logout-others", authH.LogoutOthers)
+		r.Delete("/api/auth/account", authH.DeleteAccount)
+		r.Post("/api/households/join", hhH.Join)
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireHousehold(db))
@@ -63,10 +74,10 @@ func newHarness(t *testing.T) *harness {
 			r.Get("/api/medicines/{id}", medH.Get)
 			r.Put("/api/medicines/{id}", medH.Update)
 			r.Delete("/api/medicines/{id}", medH.Delete)
+			r.Get("/api/medicines/{id}/history", auditH.MedicineHistory)
 			r.Post("/api/sync", syncH.Sync)
 
 			r.Get("/api/households/current", hhH.GetCurrent)
-			r.Post("/api/households/join", hhH.Join)
 			r.Post("/api/households/{id}/invite", hhH.CreateInvite)
 			r.Delete("/api/households/{id}/members/{user_id}", hhH.RemoveMember)
 		})

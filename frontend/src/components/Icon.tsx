@@ -26,7 +26,9 @@ export type IconName =
   | "wifi"
   | "wifi-off"
   | "chevron-down"
-  | "home";
+  | "home"
+  | "printer"
+  | "restore";
 
 const paths: Record<IconName, JSX.Element> = {
   pill: (
@@ -48,6 +50,19 @@ const paths: Record<IconName, JSX.Element> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  printer: (
+    <>
+      <path d="M6 9V2h12v7" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <path d="M6 14h12v8H6z" />
+    </>
+  ),
+  restore: (
+    <>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+    </>
+  ),
   minus: <path d="M5 12h14" />,
   trash: (
     <>

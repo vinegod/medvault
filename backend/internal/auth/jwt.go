@@ -8,15 +8,25 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const bcryptCost = 12
 
+// Token types carried in the "typ" claim. Both token kinds share one signing
+// secret, so the type is what stops a refresh token from being accepted as
+// an access token (and vice versa).
+const (
+	TokenTypeAccess  = "access"
+	TokenTypeRefresh = "refresh"
+)
+
 // Claims is embedded in every JWT we issue.
 type Claims struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username,omitempty"` // omitted in refresh tokens
+	Type     string `json:"typ,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -25,7 +35,9 @@ func GenerateAccessToken(secret, userID, username string, ttl time.Duration) (st
 	claims := Claims{
 		UserID:   userID,
 		Username: username,
+		Type:     TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        uuid.NewString(),
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
@@ -45,7 +57,11 @@ func GenerateAccessToken(secret, userID, username string, ttl time.Duration) (st
 func GenerateRefreshToken(secret, userID string, ttl time.Duration) (string, error) {
 	claims := Claims{
 		UserID: userID,
+		Type:   TokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
+			// A unique jti keeps two tokens issued in the same second from
+			// hashing identically (logout on one device would revoke both).
+			ID:        uuid.NewString(),
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),

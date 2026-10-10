@@ -42,5 +42,12 @@ export default defineConfig({
     // Output into backend/static so `go run .` serves it in prod.
     outDir: "../backend/static",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Keep third-party code in its own chunk so no single file passes
+        // the 500 KB pre-commit limit and app updates don't re-download it.
+        manualChunks: (id) => (id.includes("node_modules") ? "vendor" : undefined),
+      },
+    },
   },
 });

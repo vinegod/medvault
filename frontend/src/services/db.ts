@@ -45,6 +45,7 @@ export async function addMedicine(input: MedicineInput): Promise<LocalMedicine> 
     created_at: now,
     updated_at: now,
     deleted_at: null,
+    disposed_at: null,
     sync_status: isServerConnected ? "pending" : "local",
   };
 
@@ -86,14 +87,26 @@ export async function deleteMedicine(id: string): Promise<void> {
   });
 }
 
-// restoreMedicine clears the soft-delete flag — used by the toast "Undo"
-// action right after a delete. Bumps updated_at so the un-delete propagates
-// to the server on the next sync.
+// disposeMedicine soft-deletes a medicine and marks it as thrown away.
+export async function disposeMedicine(id: string): Promise<void> {
+  const now = new Date().toISOString();
+  const isServerConnected = await getMeta("server_url");
+  await db.medicines.update(id, {
+    deleted_at: now,
+    disposed_at: now,
+    updated_at: now,
+    sync_status: isServerConnected ? "pending" : "local",
+  });
+}
+
+// restoreMedicine clears the soft-delete and disposal flags. Used by the
+// toast "Undo" action and the Trash page.
 export async function restoreMedicine(id: string): Promise<void> {
   const now = new Date().toISOString();
   const isServerConnected = await getMeta("server_url");
   await db.medicines.update(id, {
     deleted_at: null,
+    disposed_at: null,
     updated_at: now,
     sync_status: isServerConnected ? "pending" : "local",
   });
@@ -103,6 +116,12 @@ export async function restoreMedicine(id: string): Promise<void> {
 
 export async function getActiveMedicines(): Promise<LocalMedicine[]> {
   return db.medicines.filter((m) => m.deleted_at === null).sortBy("name");
+}
+
+// getDeletedMedicines returns soft-deleted medicines, most recently deleted first.
+export async function getDeletedMedicines(): Promise<LocalMedicine[]> {
+  const list = await db.medicines.filter((m) => m.deleted_at !== null).toArray();
+  return list.sort((a, b) => b.deleted_at!.localeCompare(a.deleted_at!));
 }
 
 export async function getMedicineById(id: string): Promise<LocalMedicine | undefined> {

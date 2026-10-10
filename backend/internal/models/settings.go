@@ -1,6 +1,9 @@
 package models
 
-import "errors"
+import (
+	"errors"
+	"unicode/utf8"
+)
 
 type UserSettings struct {
 	AlertDays          []int  `json:"alert_days"`
@@ -25,7 +28,7 @@ func (s *UserSettings) Validate() error {
 	if !validNotificationMethods[s.NotificationMethod] {
 		return errors.New("notification_method must be 'browser' or 'none'")
 	}
-	if len(s.DefaultCategory) > 50 {
+	if utf8.RuneCountInString(s.DefaultCategory) > 50 {
 		return errors.New("default_category must be 50 characters or fewer")
 	}
 	return nil

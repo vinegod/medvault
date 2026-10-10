@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path"
@@ -34,16 +35,26 @@ type config struct {
 	accessTTL        time.Duration
 	refreshTTL       time.Duration
 	allowedOrigins   []string
-	drugDBDir        string // base dir for per-country drug DBs; empty = disabled
-	drugDBCountry    string // active country code for sync-time enrichment
-	photoDir         string // where uploaded medicine photos live on disk
-	backupDir        string // empty = scheduled backups disabled
-	backupRetainDays int    // 0 = keep forever
-	backupHour       int    // 0..23 local time, default 3
+	trustedProxies   []netip.Prefix // peers allowed to set X-Forwarded-For
+	drugDBDir        string         // base dir for per-country drug DBs; empty = disabled
+	drugDBCountry    string         // active country code for sync-time enrichment
+	photoDir         string         // where uploaded medicine photos live on disk
+	backupDir        string         // empty = scheduled backups disabled
+	backupRetainDays int            // 0 = keep forever
+	backupHour       int            // 0..23 local time, default 3
+	registrationMode string         // open | invite | closed
 }
 
 func main() {
 	_ = godotenv.Load()
+
+	if len(os.Args) > 1 {
+		if err := runAdmin(context.Background(), os.Args[1:], os.Getenv, os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	cfg := loadConfig()
 
 	log.Printf("MedVault %s starting on port %s", version.Version, cfg.port)
@@ -127,9 +138,15 @@ func loadConfig() config {
 		backupDir:        os.Getenv("BACKUP_DIR"), // empty disables
 		backupRetainDays: parseIntEnv("BACKUP_RETAIN_DAYS", 14),
 		backupHour:       parseIntEnv("BACKUP_HOUR", 3),
+		registrationMode: strings.ToLower(getEnv("REGISTRATION_MODE", handlers.RegistrationOpen)),
 	}
 	if c.jwtSecret == "" {
 		log.Fatal("JWT_SECRET is required")
+	}
+	switch c.registrationMode {
+	case handlers.RegistrationOpen, handlers.RegistrationInvite, handlers.RegistrationClosed:
+	default:
+		log.Fatalf("REGISTRATION_MODE: want open, invite or closed, got %q", c.registrationMode)
 	}
 
 	if origins := os.Getenv("ALLOWED_ORIGINS"); origins != "" {
@@ -141,12 +158,36 @@ func loadConfig() config {
 			}
 		}
 	}
+	c.trustedProxies = parseTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
+
 	if len(c.allowedOrigins) == 0 {
 		// Dev default: Vite's dev server.
 		c.allowedOrigins = []string{"http://localhost:5173"}
 	}
 
 	return c
+}
+
+// parseTrustedProxies reads a comma-separated list of IPs or CIDRs. A typo
+// here would silently disable per-client rate limiting (or trust the wrong
+// peer), so invalid entries are fatal.
+func parseTrustedProxies(raw string) []netip.Prefix {
+	var out []netip.Prefix
+	for _, s := range strings.Split(raw, ",") {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(s); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(s)
+		if err != nil {
+			log.Fatalf("TRUSTED_PROXIES: invalid IP or CIDR %q", s)
+		}
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out
 }
 
 func getEnv(key, fallback string) string {
@@ -190,10 +231,11 @@ func parseDuration(key string, fallback time.Duration) time.Duration {
 //     can take over for client-side routes.
 func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.Handler {
 	authH := &handlers.AuthHandler{
-		DB:         db,
-		JWTSecret:  cfg.jwtSecret,
-		AccessTTL:  cfg.accessTTL,
-		RefreshTTL: cfg.refreshTTL,
+		DB:               db,
+		JWTSecret:        cfg.jwtSecret,
+		AccessTTL:        cfg.accessTTL,
+		RefreshTTL:       cfg.refreshTTL,
+		RegistrationMode: cfg.registrationMode,
 	}
 	medH := &handlers.MedicineHandler{DB: db}
 	hhH := &handlers.HouseholdHandler{DB: db}
@@ -219,8 +261,10 @@ func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.H
 	// Order matters: Recover must wrap everything so a panic in any later
 	// middleware or handler still produces a 500 envelope. RequestID comes
 	// next so Logging (and Recover's own log line) can include the req_id.
+	// RealIP must precede Logging and every IP-keyed rate limiter.
 	r.Use(middleware.Recover)
 	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP(cfg.trustedProxies))
 	r.Use(middleware.Logging)
 	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.CORS(cfg.allowedOrigins))
@@ -260,8 +304,10 @@ func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.H
 		r.With(syncLimit.Middleware, middleware.RequireHousehold(db)).
 			Post("/api/sync", syncH.Sync)
 
-		// Password change: per-user, no household middleware.
+		// Account management: per-user, no household middleware.
 		r.With(apiLimit.Middleware).Post("/api/auth/password", authH.ChangePassword)
+		r.With(apiLimit.Middleware).Post("/api/auth/logout-others", authH.LogoutOthers)
+		r.With(apiLimit.Middleware).Delete("/api/auth/account", authH.DeleteAccount)
 
 		// Settings: per-user, NO household middleware.
 		r.With(apiLimit.Middleware).Route("/api/settings", func(r chi.Router) {
@@ -282,6 +328,7 @@ func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.H
 				r.Get("/{id}", medH.Get)
 				r.Put("/{id}", medH.Update)
 				r.Delete("/{id}", medH.Delete)
+				r.Get("/{id}/history", auditH.MedicineHistory)
 
 				// Photos travel out-of-band: no rate-limit override, but
 				// the upload path uses MaxBytesReader for body protection.
@@ -291,19 +338,20 @@ func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.H
 			})
 		})
 
-		// All household routes in one block. The three membership-management
-		// routes (List, Create, Switch) intentionally skip RequireHousehold
-		// so a user who just lost their only household can still recover.
+		// All household routes in one block. The membership-management
+		// routes (List, Create, Switch, Join) intentionally skip
+		// RequireHousehold so a user who just lost their only household can
+		// still recover.
 		r.Route("/api/households", func(r chi.Router) {
 			r.With(apiLimit.Middleware).Get("/", hhH.List)
 			r.With(apiLimit.Middleware).Post("/", hhH.Create)
 			r.With(apiLimit.Middleware).Post("/switch", hhH.Switch)
+			r.With(apiLimit.Middleware).Post("/join", hhH.Join)
 
 			r.Group(func(r chi.Router) {
 				r.Use(apiLimit.Middleware)
 				r.Use(middleware.RequireHousehold(db))
 				r.Get("/current", hhH.GetCurrent)
-				r.Post("/join", hhH.Join)
 				r.Patch("/{id}", hhH.Rename)
 				r.Delete("/{id}/membership", hhH.Leave)
 				r.Post("/{id}/transfer", hhH.Transfer)
@@ -342,6 +390,7 @@ func spaHandler(staticDir string) http.Handler {
 
 		clean := path.Clean(r.URL.Path)
 		fsPath := filepath.Join(staticDir, filepath.FromSlash(clean))
+		//nolint:gosec // clean is rooted, so fsPath stays under staticDir
 		if info, err := os.Stat(fsPath); err == nil && !info.IsDir() {
 			fs.ServeHTTP(w, r)
 			return

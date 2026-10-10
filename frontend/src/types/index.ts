@@ -4,12 +4,14 @@
 // (see utils/effectiveExpiration.ts). Both are optional. photo_hash is the
 // SHA-256 hex of the most recent uploaded photo, served by
 // /api/medicines/{id}/photo. Photos themselves are cached in IndexedDB.
+// disposed_at is set only on deleted records that were thrown away.
 export interface Medicine {
   id: string;
   name: string;
   quantity: number;
   unit: MedicineUnit;
   category: string;
+  active_ingredient: string | null;
   expiration_date: string | null; // ISO date string "2027-03-15"
   opened_at: string | null;
   days_after_opening: number | null;
@@ -20,6 +22,7 @@ export interface Medicine {
   created_at: string; // ISO datetime
   updated_at: string; // ISO datetime
   deleted_at: string | null; // ISO datetime, null = active
+  disposed_at: string | null; // ISO datetime
 }
 
 // Client-side record with sync tracking (stored in IndexedDB)
@@ -50,6 +53,7 @@ export interface MedicineInput {
   quantity: number;
   unit: MedicineUnit;
   category: string;
+  active_ingredient: string;
   expiration_date: string;
   opened_at: string;
   days_after_opening: number | null;
@@ -66,6 +70,9 @@ export interface AuditEntry {
     | "medicine.create"
     | "medicine.update"
     | "medicine.delete"
+    | "medicine.restore"
+    | "medicine.dispose"
+    | "medicine.quantity"
     | "household.rename"
     | "household.member.add"
     | "household.member.remove"
@@ -73,6 +80,8 @@ export interface AuditEntry {
   target_type: string;
   target_id: string | null;
   target_name: string | null;
+  quantity_before: number | null;
+  quantity_after: number | null;
   at: string;
 }
 

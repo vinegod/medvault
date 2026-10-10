@@ -18,6 +18,8 @@ import JoinHousehold from "./pages/JoinHousehold";
 import CreateHousehold from "./pages/CreateHousehold";
 import OnboardingHousehold from "./pages/OnboardingHousehold";
 import NotFound from "./pages/NotFound";
+import Trash from "./pages/Trash";
+import InventoryPrint from "./pages/InventoryPrint";
 
 // Server-only routes redirect to /settings if no server is connected.
 function ConnectedOnly() {
@@ -64,6 +66,8 @@ function AppRoutes() {
         <Route path="/medicines/:id/edit" element={<MedicineForm key={location.pathname} />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/trash" element={<Trash />} />
+        <Route path="/inventory/print" element={<InventoryPrint />} />
 
         <Route element={<ConnectedOnly />}>
           <Route path="/household" element={<Household />} />

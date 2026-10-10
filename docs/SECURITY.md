@@ -76,6 +76,43 @@ This is the trade-off for refresh-token rotation.
   re-login on every other device).
 - Issues a fresh pair so the calling device stays logged in.
 
+### Registration control
+
+`REGISTRATION_MODE` limits who can create accounts:
+
+- `open` (default): anyone who can reach the server.
+- `invite`: a valid household invite code is required; the new user
+  joins that household.
+- `closed`: no self-registration.
+
+The first user on an empty server can always register. Instances reachable
+from the internet should run `invite` or `closed`.
+
+### Signing out other devices
+
+`POST /api/auth/logout-others` revokes every refresh token except the
+caller's. Access tokens already issued on other devices stay valid until
+they expire (`JWT_ACCESS_TTL`, 15 min by default).
+
+### Account deletion
+
+`DELETE /api/auth/account` requires the current password. It is refused
+while the user is the only owner of a household with other members. In
+shared households the user's medicines are reassigned to the owner rather
+than deleted; households where the user was alone are deleted.
+
+### Admin password reset
+
+There is no email-based reset. An operator with shell access to the
+server resets a password with:
+
+```bash
+docker compose exec medvault ./medvault reset-password <username>
+```
+
+The command prints a random 16-character password and revokes the user's
+refresh tokens.
+
 ## Authorization
 
 Three layers stacked in middleware order:

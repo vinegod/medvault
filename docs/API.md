@@ -38,7 +38,9 @@ code is the primary signal; the `error.code` enum is for client logic
 | `FORBIDDEN` | 403 | Token is valid but the user has no permission for this resource (no household membership, not the household owner, wrong household in path). |
 | `NOT_FOUND` | 404 | Resource does not exist or was soft-deleted. Also returned by drug search when the drug DB or the requested country isn't configured. |
 | `CONFLICT` | 409 | Username already taken; already a member of that household. |
-| `OWNER_TRANSFER_REQUIRED` | 409 | Sole owner of a household with co-members tried to leave. Must `POST .../transfer` first. |
+| `OWNER_TRANSFER_REQUIRED` | 409 | Sole owner of a household with co-members tried to leave or delete their account. Must `POST .../transfer` first. |
+| `REGISTRATION_CLOSED` | 403 | Register while the server runs with `REGISTRATION_MODE=closed`. |
+| `INVITE_REQUIRED` | 400 | Register without `invite_code` while the server runs with `REGISTRATION_MODE=invite`. |
 | `RATE_LIMITED` | 429 | Rate limit exceeded — see the per-endpoint table below. Back off and retry after the window. |
 | `UNAVAILABLE` | 503 | DB ping failed (`/api/ready`); all configured drug DBs failed to open. |
 | `INTERNAL` | 500 | Unexpected error. Body is sanitised; the server log has the request id. |
@@ -117,18 +119,30 @@ be accepted.
 
 ### `POST /api/auth/register` _(public, 5/min/IP)_
 
-Creates a user, a personal household called `"<username>'s Household"`,
-and an owner membership — all in one transaction.
+Creates a user in one transaction. Without `invite_code` the user gets a
+personal household called `"<username>'s Household"` and owns it. With
+`invite_code` the user joins the invited household as a member instead.
 
 Request:
 
 ```json
-{ "username": "alice", "password": "correct horse battery staple" }
+{ "username": "alice", "password": "correct horse battery staple", "invite_code": "ABCD1234" }
 ```
 
 Validation:
 - `username`: 3–30 chars, `[a-zA-Z0-9_]+`.
 - `password`: ≥ 8 chars.
+- `invite_code`: optional.
+
+`REGISTRATION_MODE` on the server:
+
+| Mode | Behaviour |
+|------|-----------|
+| `open` (default) | Anyone can register. |
+| `invite` | `invite_code` is required. |
+| `closed` | Registration is refused; use the admin CLI. |
+
+The first user on an empty server can always register.
 
 Response `201`:
 
@@ -147,7 +161,9 @@ Response `201`:
 }
 ```
 
-Errors: `409 CONFLICT` (username taken), `400 VALIDATION_ERROR`.
+Errors: `409 CONFLICT` (username taken), `400 VALIDATION_ERROR` (including
+an invalid or expired invite code), `400 INVITE_REQUIRED`,
+`403 REGISTRATION_CLOSED`.
 
 ### `POST /api/auth/login` _(public, 10/min/IP)_
 
@@ -216,6 +232,35 @@ Response `200`:
   "error": null
 }
 ```
+
+### `POST /api/auth/logout-others` _(authenticated, 60/min/user)_
+
+```json
+{ "refresh_token": "eyJ..." }
+```
+
+Revokes every refresh token of the caller except the one sent. Access
+tokens already issued stay valid until they expire (`JWT_ACCESS_TTL`).
+Response `200` with `data: null`.
+
+### `DELETE /api/auth/account` _(authenticated, 60/min/user)_
+
+```json
+{ "password": "..." }
+```
+
+Deletes the caller's account in one transaction:
+
+- Households where the caller is the only member are deleted with their
+  medicines.
+- In shared households the caller's membership is removed and a
+  `household.member.remove` audit row is written. Medicines and households
+  the caller created are reassigned to that household's owner.
+- Refresh tokens and settings are deleted.
+
+Errors: `401 UNAUTHORIZED` (wrong password), `409 OWNER_TRANSFER_REQUIRED`
+(caller is the only owner of a household with other members; the message
+lists the household names).
 
 ---
 
@@ -431,6 +476,8 @@ clamped to `[1, 200]`.
 
 Actions logged:
 - `medicine.create`, `medicine.update`, `medicine.delete`
+- `medicine.quantity` (only the quantity changed), `medicine.dispose`,
+  `medicine.restore`
 - `household.rename`
 - `household.member.add` (any user joins)
 - `household.member.remove`
@@ -448,12 +495,19 @@ Response `200`:
       "target_type": "medicine",
       "target_id":   "med-uuid",
       "target_name": "Tylenol",
+      "quantity_before": null,
+      "quantity_after":  null,
       "at":          "2026-05-06T13:00:00Z"
     }
   ],
   "error": null
 }
 ```
+
+Medicine changes are logged both from the REST endpoints and from
+`/api/sync`. `quantity_before` / `quantity_after` are set when a medicine's
+quantity changed. A write that changes no visible field, or that loses
+last-write-wins, is not logged.
 
 `username` is captured at the moment of the action — it survives the user
 being removed from the household later. `target_id` and `target_name` are
@@ -475,6 +529,7 @@ household middleware. Cross-household ids return `404`, never expose data.
   "quantity": 10,
   "unit": "tablets",
   "category": "painkiller",
+  "active_ingredient": "ibuprofen",
   "expiration_date": "2027-03-15",
   "opened_at": null,
   "days_after_opening": null,
@@ -484,7 +539,8 @@ household middleware. Cross-household ids return `404`, never expose data.
   "photo_hash": null,
   "created_at": "2026-05-06T13:00:00Z",
   "updated_at": "2026-05-06T13:00:00Z",
-  "deleted_at": null
+  "deleted_at": null,
+  "disposed_at": null
 }
 ```
 
@@ -495,6 +551,7 @@ household middleware. Cross-household ids return `404`, never expose data.
 | `quantity` | int | 0–99999. |
 | `unit` | enum | `tablets`, `capsules`, `ml`, `mg`, `g`, `pieces`, `drops`, `sachets`, `patches`. |
 | `category` | string | ≤ 50 chars (trimmed). Free-text; common values: `painkiller`, `vitamin`, `antibiotic`, `general`, … |
+| `active_ingredient` | nullable string | ≤ 200 chars, no `<>`. Omitting it (or sending `null`) on `PUT` or in a sync change keeps the stored value. |
 | `expiration_date` | nullable string | `YYYY-MM-DD`. Strictly validated. |
 | `opened_at` | nullable string | `YYYY-MM-DD`. Date the package was first opened. |
 | `days_after_opening` | nullable int | 1–3650. User-overridable post-opening shelf life. |
@@ -504,6 +561,7 @@ household middleware. Cross-household ids return `404`, never expose data.
 | `photo_hash` | nullable string | SHA-256 hex of the photo blob. Read-only via the medicine endpoints — set it via `POST /api/medicines/{id}/photo`. |
 | `created_at` / `updated_at` | RFC3339 | Server-assigned on `POST`; refreshed on `PUT`. |
 | `deleted_at` | nullable RFC3339 | Set by `DELETE` (soft delete). Records with `deleted_at` are hidden from `GET` and `alerts` but still flow through `sync`. |
+| `disposed_at` | nullable RFC3339 | Set through `sync` together with `deleted_at` when the medicine was thrown away. The server clears it whenever `deleted_at` is null. |
 
 **Effective expiration** (a client concern, not server-computed):
 `min(expiration_date, opened_at + days_after_opening)`. The reference
@@ -533,6 +591,7 @@ Body: every writable field except `id`, `photo_hash`, and the timestamps.
   "quantity": 10,
   "unit": "tablets",
   "category": "painkiller",
+  "active_ingredient": "ibuprofen",
   "expiration_date": "2027-03-15",
   "opened_at": null,
   "days_after_opening": null,
@@ -563,6 +622,12 @@ Soft-delete: sets `deleted_at`. Response `200` with `null` data.
 Subsequent `GET` returns `404`. The record continues to surface in
 `POST /api/sync` so deletions propagate to other devices. Writes a
 `medicine.delete` audit row.
+
+### `GET /api/medicines/{id}/history?limit=N`
+
+The audit rows for one medicine, newest first, in the same shape as
+`GET /api/households/{id}/audit`. `limit` defaults to 50, clamped to
+`[1, 200]`. An id outside the caller's household returns an empty list.
 
 ---
 

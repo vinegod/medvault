@@ -59,3 +59,35 @@ func TestRecover_PassthroughOnNoPanic(t *testing.T) {
 		t.Fatalf("status=%d, want 200", w.Code)
 	}
 }
+
+func TestRecover_RepanicsErrAbortHandler(t *testing.T) {
+	chain := middleware.Recover(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	}))
+
+	defer func() {
+		if p := recover(); p != http.ErrAbortHandler { //nolint:errorlint // identity comparison, as net/http does
+			t.Errorf("recovered %v, want http.ErrAbortHandler", p)
+		}
+	}()
+	chain.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
+}
+
+func TestRecover_AbortsWhenResponseAlreadyStarted(t *testing.T) {
+	chain := middleware.Recover(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[`))
+		panic("boom")
+	}))
+
+	w := httptest.NewRecorder()
+	defer func() {
+		if p := recover(); p != http.ErrAbortHandler { //nolint:errorlint // identity comparison, as net/http does
+			t.Errorf("recovered %v, want http.ErrAbortHandler", p)
+		}
+		if body := w.Body.String(); body != `{"data":[` {
+			t.Errorf("body = %q: a 500 envelope was appended to a started response", body)
+		}
+	}()
+	chain.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/test", http.NoBody))
+}

@@ -69,12 +69,14 @@ export async function checkServerHealth(url: string): Promise<boolean> {
   }
 }
 
-// Connect to a server for the first time
+// Connect to a server for the first time. inviteCode is only sent on
+// register; it joins the invited household instead of creating one.
 export async function connectToServer(
   url: string,
   username: string,
   password: string,
-  isRegister: boolean
+  isRegister: boolean,
+  inviteCode = ""
 ): Promise<{ success: boolean; error?: string }> {
   setStatus("connecting");
 
@@ -92,13 +94,20 @@ export async function connectToServer(
     const response = await fetch(`${url}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(
+        isRegister && inviteCode
+          ? { username, password, invite_code: inviteCode }
+          : { username, password }
+      ),
     });
 
     const result = await response.json();
     if (result.error) {
       setStatus("disconnected");
-      return { success: false, error: result.error.message };
+      return {
+        success: false,
+        error: i18n.t(`auth.errors.${result.error.code}`, { defaultValue: result.error.message }),
+      };
     }
 
     const auth: AuthResponse = result.data;
