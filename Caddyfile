@@ -1,0 +1,19 @@
+# HTTPS reverse proxy for MedVault, used by docker-compose.caddy.yml.
+# DOMAIN, CADDY_TLS, HTTP_PORT, HTTPS_PORT and MEDVAULT_PORT come from .env.
+# CADDY_TLS is "internal" (Caddy's own CA, for LAN use) or an email address
+# (a Let's Encrypt certificate for a public domain).
+{
+	http_port {$HTTP_PORT}
+	https_port {$HTTPS_PORT}
+}
+
+# Explicit redirect so a non-standard HTTPS_PORT is kept in the URL.
+http://{$DOMAIN}:{$HTTP_PORT} {
+	redir https://{host}:{$HTTPS_PORT}{uri} permanent
+}
+
+{$DOMAIN}:{$HTTPS_PORT} {
+	tls {$CADDY_TLS}
+	encode zstd gzip
+	reverse_proxy medvault:{$MEDVAULT_PORT}
+}

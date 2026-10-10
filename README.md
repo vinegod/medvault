@@ -84,8 +84,9 @@ handles TLS.
 Browsers allow the service worker, `crypto.randomUUID`/`crypto.subtle` and
 the clipboard only on HTTPS or `localhost`. Over plain HTTP on a LAN address,
 offline mode, installing the PWA, adding medicines and photo upload do not
-work. Serve MedVault over HTTPS (see [docs/SECURITY.md](docs/SECURITY.md#tls))
-before using it from a phone, then **Add to Home Screen** to install it.
+work. Serve MedVault over HTTPS before using it from a phone, then
+**Add to Home Screen** to install it. [docs/HTTPS.md](docs/HTTPS.md) covers
+Tailscale, Caddy with a public domain, and Caddy on a LAN.
 
 ### Development
 
@@ -123,7 +124,7 @@ project root).
 | `MIGRATIONS_DIR` | no | `./migrations` | Numbered SQL migrations applied at startup. |
 | `STATIC_DIR` | no | `./static` | Built React assets served on `/*`. |
 | `ALLOWED_ORIGINS` | no | `http://localhost:5173` | Comma-separated CORS origins. |
-| `TRUSTED_PROXIES` | no | _empty_ | Comma-separated IPs/CIDRs of reverse proxies (e.g. `127.0.0.1,172.16.0.0/12`). Requests from these peers take the client IP from `X-Forwarded-For`, so per-IP rate limits apply per client. Leave empty when exposed directly. |
+| `TRUSTED_PROXIES` | no | _empty_ | Comma-separated IPs/CIDRs of reverse proxies (e.g. `127.0.0.1`). List only the proxy's own address; a broad range lets other hosts in it forge the client IP. Requests from these peers take the client IP from `X-Forwarded-For`, so per-IP rate limits apply per client. Leave empty when exposed directly. |
 | `PHOTO_DIR` | no | `./data/photos` | Where uploaded medicine photos are written. |
 | `DRUG_DB_DIR` | no | `./data` | Per-country drug DBs live under `<DIR>/<iso>/drugs.db`. |
 | `DRUG_DB_COUNTRY` | no | `ua` | Active country for sync-time autofill. |
