@@ -1,0 +1,43 @@
+# Caddy in front of MedVault for HTTPS. Enable it by adding to .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.caddy.yml
+# MedVault's own port is then not published on the host; only Caddy is.
+services:
+  medvault:
+    ports: !reset []
+    environment:
+      # Only Caddy may set X-Forwarded-For; the network gateway may not.
+      - TRUSTED_PROXIES=${CADDY_IP:-172.30.250.10}
+
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: medvault-caddy
+    restart: unless-stopped
+    depends_on:
+      - medvault
+    networks:
+      default:
+        ipv4_address: ${CADDY_IP:-172.30.250.10}
+    ports:
+      - "${HTTP_PORT:-80}:${HTTP_PORT:-80}"
+      - "${HTTPS_PORT:-443}:${HTTPS_PORT:-443}"
+      - "${HTTPS_PORT:-443}:${HTTPS_PORT:-443}/udp"
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
+      - CADDY_TLS=${CADDY_TLS:-internal}
+      - HTTP_PORT=${HTTP_PORT:-80}
+      - HTTPS_PORT=${HTTPS_PORT:-443}
+      - MEDVAULT_PORT=${PORT:-8080}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${CADDY_SUBNET:-172.30.250.0/24}
+
+volumes:
+  caddy-data:
+  caddy-config:

@@ -3,6 +3,8 @@ repos:
     rev: v6.0.0
     hooks:
     - id: check-yaml
+      # Uses the compose-only !reset tag.
+      exclude: ^docker-compose\.caddy\.yml$
     - id: end-of-file-fixer
       exclude: ^backend/static/
     - id: trailing-whitespace

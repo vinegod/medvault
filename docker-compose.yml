@@ -13,6 +13,7 @@ services:
       - .env
     environment:
       - DB_PATH=/app/data/medvault.db
+      - PORT=${PORT:-8080}
 
 volumes:
   medvault-data:

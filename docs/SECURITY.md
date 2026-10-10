@@ -212,7 +212,8 @@ Two recommended deployment shapes:
 
 1. **Reverse proxy** (recommended): Caddy or nginx in front, handling
    TLS termination. Set `X-Forwarded-Proto: https` so the server emits
-   HSTS. This is what `docker-compose.yml` is sized for.
+   HSTS. `docker-compose.caddy.yml` sets this up with Caddy; see
+   [HTTPS.md](HTTPS.md), which also covers Tailscale.
 2. **Built-in TLS**: replace `http.ListenAndServe` with
    `http.ListenAndServeTLS` in `main.go`. Use Let's Encrypt certs.
 
