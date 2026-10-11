@@ -70,6 +70,14 @@ export function AiSettingsCard() {
 
   if (!settings) return null;
 
+  const keyStored = settings.source === "web" && settings.api_key_set;
+  // The server refuses to reuse a stored key on a new endpoint.
+  const keyReentry =
+    keyStored &&
+    !clearKey &&
+    (draft.provider !== settings.provider ||
+      draft.base_url.trim().replace(/\/+$/, "") !== settings.base_url);
+
   const summary =
     settings.source === "none"
       ? t("ai.source_none")
@@ -139,15 +147,18 @@ export function AiSettingsCard() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={
-                settings.source === "web" && settings.api_key_set
-                  ? t("ai.api_key_stored")
-                  : t("ai.api_key_placeholder")
+                keyReentry
+                  ? t("ai.api_key_reenter")
+                  : keyStored
+                    ? t("ai.api_key_stored")
+                    : t("ai.api_key_placeholder")
               }
               disabled={clearKey}
+              required={keyReentry}
               maxLength={500}
             />
           </label>
-          {settings.source === "web" && settings.api_key_set && (
+          {keyStored && (
             <label
               style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.85rem" }}
             >

@@ -60,6 +60,9 @@ func (a *Assistant) SaveSettings(ctx context.Context, userID string, req *models
 	case req.APIKey == nil && !exists:
 		keyEnc = nil
 	case req.APIKey == nil:
+		if keyEnc != nil && (req.Provider != current.provider || req.BaseURL != current.baseURL) {
+			return ErrAPIKeyReentry
+		}
 	case *req.APIKey == "":
 		keyEnc = nil
 	default:

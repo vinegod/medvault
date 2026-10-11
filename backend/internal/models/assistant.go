@@ -14,7 +14,7 @@ const (
 )
 
 // AISettingsRequest is the body of PUT /api/ai/settings. A nil APIKey keeps
-// the stored key, an empty one clears it.
+// the stored key unless Provider or BaseURL changes; an empty one clears it.
 type AISettingsRequest struct {
 	Provider    string  `json:"provider"`
 	BaseURL     string  `json:"base_url"`

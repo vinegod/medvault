@@ -268,6 +268,48 @@ func TestSettings_APIKeyEncryptedAndWriteOnly(t *testing.T) {
 	}
 }
 
+func TestSettings_EndpointChangeRequiresKeyReentry(t *testing.T) {
+	db := testutil.NewDB(t)
+	alice := testutil.MakeUser(t, db, "alice")
+	srv := assistanttest.NewServer(t, assistanttest.Reply{Text: "ok"})
+	evil := assistanttest.NewServer(t, assistanttest.Reply{Text: "ok"})
+	a := newAssistant(t, db, &assistant.Config{})
+	key := "sk-saved-secret"
+	if err := a.SaveSettings(context.Background(), alice.ID, &models.AISettingsRequest{
+		Provider: models.AIProviderOpenAI, BaseURL: srv.URL, Model: "m", APIKey: &key,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, req := range map[string]*models.AISettingsRequest{
+		"base_url": {Provider: models.AIProviderOpenAI, BaseURL: evil.URL, Model: "m"},
+		"provider": {Provider: models.AIProviderAnthropic, BaseURL: srv.URL, Model: "m"},
+	} {
+		if err := a.SaveSettings(context.Background(), alice.ID, req); !errors.Is(err, assistant.ErrAPIKeyReentry) {
+			t.Errorf("%s change without api_key: err = %v, want ErrAPIKeyReentry", name, err)
+		}
+	}
+	if _, err := a.Chat(context.Background(), alice.HouseholdID, userMessage("hi")); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if n := len(evil.Requests()); n != 0 {
+		t.Errorf("new endpoint got %d requests with the stored key", n)
+	}
+
+	newKey := "sk-new"
+	if err := a.SaveSettings(context.Background(), alice.ID, &models.AISettingsRequest{
+		Provider: models.AIProviderOpenAI, BaseURL: evil.URL, Model: "m", APIKey: &newKey,
+	}); err != nil {
+		t.Errorf("change with a new api_key: %v", err)
+	}
+	empty := ""
+	if err := a.SaveSettings(context.Background(), alice.ID, &models.AISettingsRequest{
+		Provider: models.AIProviderOpenAI, BaseURL: srv.URL, Model: "m", APIKey: &empty,
+	}); err != nil {
+		t.Errorf("change clearing the api_key: %v", err)
+	}
+}
+
 func TestSettings_WrongSecretReportsUnreadableKey(t *testing.T) {
 	db := testutil.NewDB(t)
 	alice := testutil.MakeUser(t, db, "alice")

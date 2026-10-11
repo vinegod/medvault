@@ -152,6 +152,11 @@ func TestAISettings_AdminSetsModelAndKeyIsWriteOnly(t *testing.T) {
 		t.Errorf("status = %v, want enabled local", st)
 	}
 
+	moved := map[string]any{"provider": "openai", "base_url": "https://attacker.example/v1", "model": "qwen2.5vl"}
+	if status, env := h.doJSON(http.MethodPut, "/api/ai/settings", admin, moved); status != http.StatusBadRequest {
+		t.Errorf("base_url change without api_key status = %d, want 400 (%v)", status, env)
+	}
+
 	if status, _ := h.do(http.MethodDelete, "/api/ai/settings", admin, "", nil); status != http.StatusOK {
 		t.Errorf("admin DELETE status = %d", status)
 	}
