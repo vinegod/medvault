@@ -9,7 +9,7 @@ services:
       - TRUSTED_PROXIES=${CADDY_IP:-172.30.250.10}
 
   caddy:
-    image: caddy:2.10-alpine
+    image: caddy:2.11-alpine
     container_name: medvault-caddy
     restart: unless-stopped
     depends_on:

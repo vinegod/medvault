@@ -1,4 +1,4 @@
-import type { SVGProps } from "react";
+import type { JSX, SVGProps } from "react";
 
 // A tiny hand-rolled icon set. Inline SVG avoids an extra dependency and
 // renders consistently across every device — emoji shapes/colors vary by OS.

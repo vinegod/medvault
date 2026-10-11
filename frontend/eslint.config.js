@@ -1,6 +1,6 @@
 import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
-import reactPlugin from "eslint-plugin-react";
+import eslintReact from "@eslint-react/eslint-plugin";
 import reactHooksPlugin from "eslint-plugin-react-hooks";
 import prettierConfig from "eslint-config-prettier";
 
@@ -20,18 +20,15 @@ export default [
     },
     plugins: {
       "@typescript-eslint": tsPlugin,
-      react: reactPlugin,
+      ...eslintReact.configs["recommended-typescript"].plugins,
       "react-hooks": reactHooksPlugin,
     },
-    settings: {
-      react: { version: "detect" },
-    },
+    settings: eslintReact.configs["recommended-typescript"].settings,
     rules: {
       ...tsPlugin.configs.recommended.rules,
-      ...reactPlugin.configs.recommended.rules,
+      ...eslintReact.configs["recommended-typescript"].rules,
       ...reactHooksPlugin.configs.recommended.rules,
-      "react/react-in-jsx-scope": "off",
-      "react/prop-types": "off",
+      ...eslintReact.configs["disable-conflict-eslint-plugin-react-hooks"].rules,
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
