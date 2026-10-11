@@ -37,6 +37,9 @@ var (
 	ErrUpstream = errors.New("model provider request failed")
 	// ErrAPIKeyRequired means the provider needs a key and none is stored.
 	ErrAPIKeyRequired = errors.New("api_key is required for this provider")
+	// ErrAPIKeyReentry means the provider or base URL changed while a key is
+	// stored, so the key must be entered again or cleared.
+	ErrAPIKeyReentry = errors.New("api_key must be re-entered when the provider or base_url changes")
 )
 
 // Config selects a model endpoint.

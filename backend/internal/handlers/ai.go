@@ -166,6 +166,8 @@ func writeAIError(w http.ResponseWriter, op string, err error) {
 		)
 	case errors.Is(err, assistant.ErrAPIKeyRequired):
 		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, "api_key is required for this provider")
+	case errors.Is(err, assistant.ErrAPIKeyReentry):
+		api.WriteError(w, http.StatusBadRequest, models.CodeValidation, assistant.ErrAPIKeyReentry.Error())
 	case errors.Is(err, assistant.ErrUpstream):
 		api.WriteError(w, http.StatusBadGateway, models.CodeUpstream, "AI provider request failed")
 	case errors.Is(err, context.DeadlineExceeded):

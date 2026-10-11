@@ -868,6 +868,8 @@ The API key is never returned. `base_url` is empty for non-admins.
 - `base_url`: optional http(s) URL without credentials, max 300 chars.
 - `model` required, `vision_model` optional (defaults to `model`), max 100 chars each.
 - `api_key`: omitted keeps the stored key, `""` clears it. Required for `anthropic`.
+  Must be sent (new key or `""`) when `provider` or `base_url` changes while a
+  key is stored, otherwise `400 VALIDATION_ERROR`.
 
 A saved config never uses the `.env` API key. Returns the new settings.
 `403 FORBIDDEN` for non-admins.

@@ -217,7 +217,8 @@ export interface AiSettings {
   can_edit: boolean;
 }
 
-// PUT /api/ai/settings. Omit api_key to keep the stored key, "" clears it.
+// PUT /api/ai/settings. Omit api_key to keep the stored key (not allowed when
+// provider or base_url changes), "" clears it.
 export interface AiSettingsInput {
   provider: AiProvider;
   base_url: string;
