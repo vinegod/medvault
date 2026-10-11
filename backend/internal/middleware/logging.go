@@ -29,6 +29,11 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return n, err //nolint:wrapcheck // transparent pass-through; wrapping would obscure the real net/http error
 }
 
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (s *statusRecorder) Unwrap() http.ResponseWriter {
+	return s.ResponseWriter
+}
+
 // Logging emits one structured log line per request: method, path, status,
 // duration, remote IP. We do NOT log the request body or response body —
 // SECURITY.md forbids logging tokens, passwords, or medicine data.

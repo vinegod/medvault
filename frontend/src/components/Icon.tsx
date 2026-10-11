@@ -28,7 +28,10 @@ export type IconName =
   | "chevron-down"
   | "home"
   | "printer"
-  | "restore";
+  | "restore"
+  | "sparkles"
+  | "camera"
+  | "send";
 
 const paths: Record<IconName, JSX.Element> = {
   pill: (
@@ -145,6 +148,24 @@ const paths: Record<IconName, JSX.Element> = {
     <>
       <path d="m3 11 9-8 9 8" />
       <path d="M5 10v10a1 1 0 0 0 1 1h4v-7h4v7h4a1 1 0 0 0 1-1V10" />
+    </>
+  ),
+  sparkles: (
+    <>
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
+      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z" />
+      <circle cx="12" cy="13" r="4" />
+    </>
+  ),
+  send: (
+    <>
+      <path d="M22 2 11 13" />
+      <path d="M22 2 15 22l-4-9-9-4 20-7Z" />
     </>
   ),
 };

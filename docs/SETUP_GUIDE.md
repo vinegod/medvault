@@ -139,6 +139,52 @@ To add another country, add an adapter to the `SOURCES` registry in
 `scripts/import_drugs.py` and drop the resulting `drugs.db` under
 `backend/data/<iso>/`. The Go side discovers it on the next boot.
 
+## AI assistant (optional)
+
+Set a default in `.env`, or set the model in Settings as a server admin
+(the first registered user). The model needs tool calling; photo scans
+need a vision model.
+
+Ollama:
+
+```bash
+ollama pull qwen2.5vl:7b
+```
+
+```
+AI_BASE_URL=http://localhost:11434/v1
+AI_MODEL=qwen2.5vl:7b
+```
+
+OpenAI:
+
+```
+AI_API_KEY=sk-...
+AI_MODEL=gpt-4o-mini
+```
+
+OpenRouter:
+
+```
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_API_KEY=sk-or-...
+AI_MODEL=google/gemini-2.5-flash
+```
+
+Anthropic:
+
+```
+AI_PROVIDER=anthropic
+AI_API_KEY=sk-ant-...
+AI_MODEL=claude-haiku-5-5
+```
+
+From Docker, reach Ollama on the host via `http://host.docker.internal:11434/v1`
+(add `extra_hosts: ["host.docker.internal:host-gateway"]` on Linux).
+
+To debug prompts in the Genkit Dev UI, run the backend with
+`GENKIT_ENV=dev` under `genkit start -- go run .`.
+
 ## Project layout
 
 ```

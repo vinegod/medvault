@@ -6,9 +6,12 @@ package handlers_test
 // must keep failing the same way over time.
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/vinegod/medvault/backend/internal/database"
 )
 
 func TestAuth_Register_Happy(t *testing.T) {
@@ -221,5 +224,21 @@ func TestAuth_ChangePassword_WrongCurrent(t *testing.T) {
 	})
 	if status != http.StatusUnauthorized {
 		t.Errorf("status=%d, want 401", status)
+	}
+}
+
+func TestRegister_FirstUserBecomesAdmin(t *testing.T) {
+	h := newHarness(t)
+	_, firstID := h.register("first", "password-123")
+	_, secondID := h.register("second", "password-123")
+
+	for id, want := range map[string]bool{firstID: true, secondID: false} {
+		got, err := database.IsAdmin(context.Background(), h.db, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("IsAdmin(%s) = %v, want %v", id, got, want)
+		}
 	}
 }

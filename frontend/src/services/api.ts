@@ -37,14 +37,19 @@ class ApiClient {
     return this.accessToken;
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
+  // A FormData body is sent as multipart with the browser's own boundary.
+  async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    timeoutMs: number = REQUEST_TIMEOUT_MS
+  ): Promise<ApiResponse<T>> {
     if (!this.baseUrl) {
       return { data: null, error: { code: "NO_SERVER", message: "No server configured" } };
     }
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
+    const isForm = body instanceof FormData;
+    const headers: Record<string, string> = isForm ? {} : { "Content-Type": "application/json" };
 
     if (this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
@@ -55,8 +60,8 @@ class ApiClient {
       response = await fetch(`${this.baseUrl}${path}`, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        body: isForm ? body : body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
       // Network failure, timeout, abort — present as a structured envelope
@@ -69,7 +74,7 @@ class ApiClient {
     if (response.status === 401 && path !== "/api/auth/refresh") {
       const refreshed = await this.tryRefresh();
       if (refreshed) {
-        return this.request<T>(method, path, body);
+        return this.request<T>(method, path, body, timeoutMs);
       }
       // Refresh failed — token expired, user needs to reconnect
       return {

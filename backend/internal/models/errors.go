@@ -10,6 +10,8 @@ const (
 	CodeConflict     = "CONFLICT"
 	CodeRateLimited  = "RATE_LIMITED"
 	CodeInternal     = "INTERNAL"
+	CodeUpstream     = "UPSTREAM_ERROR"
+	CodeTimeout      = "TIMEOUT"
 
 	// CodeOwnerTransferRequired is returned when an owner tries to leave a
 	// household that still has other members. The client must call the

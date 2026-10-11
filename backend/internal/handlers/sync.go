@@ -303,7 +303,7 @@ func (h *SyncHandler) enrichFromDrugDB(ctx context.Context, c *models.Medicine) 
 		return
 	}
 
-	d, err := LookupExact(ctx, h.DrugRegistry, h.DrugCountry, c.Name)
+	d, err := h.DrugRegistry.LookupExact(ctx, h.DrugCountry, c.Name)
 	if err != nil {
 		slog.Warn("sync enrich: drug lookup", "name", c.Name, "err", err)
 		return

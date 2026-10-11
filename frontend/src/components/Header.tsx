@@ -22,6 +22,7 @@ export function Header() {
     "/household/new": { title: t("header.create_household"), back: true },
     "/household/join": { title: t("header.join_household"), back: true },
     "/trash": { title: t("header.trash"), back: true },
+    "/assistant": { title: t("header.assistant") },
     "/inventory/print": { title: t("header.inventory"), back: true },
     "/onboarding/household": { title: t("header.fallback") },
   };

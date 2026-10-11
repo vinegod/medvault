@@ -19,9 +19,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 	"github.com/vinegod/medvault/backend/internal/api"
+	"github.com/vinegod/medvault/backend/internal/assistant"
 	"github.com/vinegod/medvault/backend/internal/database"
 	"github.com/vinegod/medvault/backend/internal/handlers"
 	"github.com/vinegod/medvault/backend/internal/middleware"
+	"github.com/vinegod/medvault/backend/internal/models"
 	"github.com/vinegod/medvault/backend/internal/version"
 )
 
@@ -43,6 +45,7 @@ type config struct {
 	backupRetainDays int            // 0 = keep forever
 	backupHour       int            // 0..23 local time, default 3
 	registrationMode string         // open | invite | closed
+	ai               assistant.Options
 }
 
 func main() {
@@ -159,6 +162,7 @@ func loadConfig() config {
 		}
 	}
 	c.trustedProxies = parseTrustedProxies(os.Getenv("TRUSTED_PROXIES"))
+	c.ai = loadAIOptions(c.jwtSecret, c.drugDBCountry)
 
 	if len(c.allowedOrigins) == 0 {
 		// Dev default: Vite's dev server.
@@ -166,6 +170,29 @@ func loadConfig() config {
 	}
 
 	return c
+}
+
+// loadAIOptions reads the AI_* variables: the model used until an admin
+// saves one in the web UI. An empty AI_MODEL leaves it disabled.
+func loadAIOptions(jwtSecret, drugCountry string) assistant.Options {
+	opts := assistant.Options{
+		Default: assistant.Config{
+			Provider:    strings.ToLower(getEnv("AI_PROVIDER", models.AIProviderOpenAI)),
+			BaseURL:     strings.TrimRight(os.Getenv("AI_BASE_URL"), "/"),
+			APIKey:      os.Getenv("AI_API_KEY"),
+			Model:       os.Getenv("AI_MODEL"),
+			VisionModel: os.Getenv("AI_VISION_MODEL"),
+		},
+		Secret:      []byte(getEnv("AI_SECRET", jwtSecret)),
+		DrugCountry: drugCountry,
+		Timeout:     parseDuration("AI_TIMEOUT", 60*time.Second),
+	}
+	switch opts.Default.Provider {
+	case models.AIProviderOpenAI, models.AIProviderAnthropic:
+	default:
+		log.Fatalf("AI_PROVIDER: want openai or anthropic, got %q", opts.Default.Provider)
+	}
+	return opts
 }
 
 // parseTrustedProxies reads a comma-separated list of IPs or CIDRs. A typo
@@ -230,6 +257,11 @@ func parseDuration(key string, fallback time.Duration) time.Duration {
 //   - Anything not matched falls through to the SPA handler so React Router
 //     can take over for client-side routes.
 func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.Handler {
+	ai, err := assistant.New(db, drugReg, &cfg.ai)
+	if err != nil {
+		log.Fatalf("assistant: %v", err)
+	}
+	aiH := &handlers.AIHandler{DB: db, Assistant: ai}
 	authH := &handlers.AuthHandler{
 		DB:               db,
 		JWTSecret:        cfg.jwtSecret,
@@ -256,6 +288,7 @@ func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.H
 	drugLimit := middleware.NewLimiter(60, middleware.ByIP)
 	syncLimit := middleware.NewLimiter(30, middleware.ByUser)
 	apiLimit := middleware.NewLimiter(60, middleware.ByUser)
+	aiLimit := middleware.NewLimiter(10, middleware.ByUser)
 
 	r := chi.NewRouter()
 	// Order matters: Recover must wrap everything so a panic in any later
@@ -336,7 +369,16 @@ func buildRouter(db *sql.DB, drugReg *database.DrugRegistry, cfg *config) http.H
 				r.Post("/{id}/photo", photoH.Upload)
 				r.Delete("/{id}/photo", photoH.Delete)
 			})
+
+			r.With(aiLimit.Middleware).Post("/api/ai/scan", aiH.Scan)
+			r.With(aiLimit.Middleware).Post("/api/ai/chat", aiH.Chat)
 		})
+
+		// AI model config: server-wide, changed by admins only.
+		r.With(apiLimit.Middleware).Get("/api/ai/status", aiH.Status)
+		r.With(apiLimit.Middleware).Get("/api/ai/settings", aiH.GetSettings)
+		r.With(apiLimit.Middleware, middleware.RequireAdmin(db)).Put("/api/ai/settings", aiH.UpdateSettings)
+		r.With(apiLimit.Middleware, middleware.RequireAdmin(db)).Delete("/api/ai/settings", aiH.ResetSettings)
 
 		// All household routes in one block. The membership-management
 		// routes (List, Create, Switch, Join) intentionally skip

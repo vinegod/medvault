@@ -20,6 +20,7 @@ import {
   disable as disableNotifications,
 } from "../services/notifications";
 import { DEFAULT_LOW_STOCK } from "../constants";
+import { AiSettingsCard } from "../components/AiSettingsCard";
 
 export default function Settings() {
   const { status, user, serverUrl, disconnect } = useAuth();
@@ -263,6 +264,8 @@ export default function Settings() {
               </>
             )}
           </section>
+
+          {isConnected && <AiSettingsCard />}
 
           {isConnected && (
             <section style={card}>

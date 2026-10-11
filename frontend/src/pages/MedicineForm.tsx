@@ -20,9 +20,11 @@ import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { NameSuggest } from "../components/NameSuggest";
 import { resizeImage, uploadPhoto, fetchPhoto, deletePhoto } from "../services/photos";
+import { aiScan } from "../services/ai";
+import { useAiStatus } from "../hooks/useAiStatus";
 import { defaultDaysAfterOpening } from "../utils/effectiveExpiration";
 import { sharedIngredient } from "../utils/ingredients";
-import type { AuditEntry, MedicineInput, MedicineUnit } from "../types";
+import type { AiMatch, AuditEntry, MedicineInput, MedicineUnit } from "../types";
 
 const UNITS: MedicineUnit[] = [
   "tablets",
@@ -79,6 +81,11 @@ export default function MedicineForm() {
   const [photoBusy, setPhotoBusy] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const photoUrl = photoCache && photoCache.hash === photoHash ? photoCache.url : null;
+
+  const ai = useAiStatus();
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanMatches, setScanMatches] = useState<AiMatch[]>([]);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     getDistinctCategories().then(setCategorySuggestions);
@@ -221,6 +228,36 @@ export default function MedicineForm() {
     }
   }
 
+  async function handleScanFile(file: File) {
+    setScanBusy(true);
+    setScanMatches([]);
+    try {
+      const { blob } = await resizeImage(file);
+      const res = await aiScan(blob);
+      if (!res.data) {
+        toast.error(res.error?.message ?? t("ai.scan_failed"));
+        return;
+      }
+      const d = res.data.draft;
+      setFields((f) => ({
+        ...f,
+        name: d.name || f.name,
+        quantity: d.quantity || f.quantity,
+        unit: d.unit,
+        active_ingredient: d.active_ingredient ?? f.active_ingredient,
+        expiration_date: d.expiration_date ?? f.expiration_date,
+        days_after_opening: d.days_after_opening ?? f.days_after_opening,
+        barcode: d.barcode || f.barcode,
+      }));
+      setScanMatches(res.data.matches);
+      toast.success(t("ai.scan_done"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("ai.scan_failed"));
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
   async function handlePhotoRemove() {
     if (!id || !photoHash) return;
     setPhotoBusy(true);
@@ -275,6 +312,51 @@ export default function MedicineForm() {
   return (
     <>
       <form onSubmit={handleSubmit} style={formStyle}>
+        {!isEdit && ai.enabled && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <input
+              ref={scanInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleScanFile(file);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => scanInputRef.current?.click()}
+              disabled={scanBusy}
+              iconLeft={<Icon name="camera" size={16} />}
+            >
+              {scanBusy ? t("ai.scanning") : t("ai.scan_button")}
+            </Button>
+            {scanMatches.length > 0 && (
+              <div role="status" style={matchBanner}>
+                <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <Icon name="warning" size={14} />
+                  {t("ai.already_have")}
+                </span>
+                {scanMatches.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    style={matchLink}
+                    onClick={() => navigate(`/medicines/${m.id}/edit`)}
+                  >
+                    {m.name} · {t(`ai.match_${m.reason}`)}
+                  </button>
+                ))}
+                <small style={{ color: "var(--color-text-muted)" }}>{t("ai.add_anyway")}</small>
+              </div>
+            )}
+          </div>
+        )}
+
         <Field label={t("medicine_form.name")} required>
           <NameSuggest
             value={fields.name}
@@ -589,6 +671,26 @@ const warning: React.CSSProperties = {
   gap: "0.35rem",
   color: "var(--color-warning)",
   fontSize: "0.8rem",
+};
+const matchBanner: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.35rem",
+  padding: "0.75rem",
+  border: "1px solid var(--color-warning)",
+  borderRadius: "var(--radius)",
+  color: "var(--color-warning)",
+  fontSize: "0.85rem",
+};
+const matchLink: React.CSSProperties = {
+  background: "transparent",
+  border: "none",
+  padding: 0,
+  textAlign: "left",
+  color: "var(--color-primary)",
+  textDecoration: "underline",
+  cursor: "pointer",
+  fontSize: "0.9rem",
 };
 const historyToggle: React.CSSProperties = {
   display: "flex",

@@ -132,6 +132,13 @@ project root).
 | `BACKUP_RETAIN_DAYS` | no | `14` | Pruning window. `0` keeps forever. |
 | `BACKUP_HOUR` | no | `3` | Hour of day (local time, `0..23`) to run backup. |
 | `REGISTRATION_MODE` | no | `open` | `open`, `invite` (signup needs a household invite code) or `closed` (admin CLI only). The first user can always register. |
+| `AI_PROVIDER` | no | `openai` | Server default AI provider: `openai` (any OpenAI-compatible endpoint) or `anthropic`. |
+| `AI_BASE_URL` | no | _empty_ | Endpoint base URL, e.g. `http://localhost:11434/v1` for Ollama. Empty means the provider's public API. |
+| `AI_API_KEY` | no | _empty_ | API key for the server default model. |
+| `AI_MODEL` | no | _empty_ | Default model, used until a server admin sets one in Settings. Empty disables the default. |
+| `AI_VISION_MODEL` | no | `AI_MODEL` | Model used for package photos. |
+| `AI_TIMEOUT` | no | `60s` | Upper bound for one assistant request. |
+| `AI_SECRET` | no | `JWT_SECRET` | Key material for encrypting the API key saved in Settings. Changing it makes the stored key unreadable. |
 
 ### Admin CLI
 
@@ -140,6 +147,14 @@ user out everywhere):
 
 ```bash
 docker compose exec medvault ./medvault reset-password <username>
+```
+
+The first registered user is a server admin and can set the AI model in
+Settings. Grant or revoke admin rights:
+
+```bash
+docker compose exec medvault ./medvault grant-admin <username>
+docker compose exec medvault ./medvault revoke-admin <username>
 ```
 
 Static-asset directory layout the binary expects:

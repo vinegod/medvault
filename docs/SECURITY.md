@@ -167,6 +167,7 @@ fields no longer validate is still legitimate.
 | per IP | `POST /api/auth/refresh` | 20 / min |
 | per IP | `GET /api/drugs/search` | 60 / min |
 | per user | `POST /api/sync` | 30 / min, 1 MB body, 1000 records |
+| per user | `POST /api/ai/scan`, `POST /api/ai/chat` | 10 / min |
 | per user | All other authenticated routes | 60 / min |
 
 Implementation: in-memory token bucket per key (no Redis needed for
@@ -195,6 +196,25 @@ single-instance deployment).
 - Files are written to a temp path in the same directory and renamed,
   so a concurrent reader sees either the old file or the complete new
   one — never a half-written blob.
+
+## AI assistant
+
+- Data egress: chat messages, inventory rows returned by tools and scanned
+  photos are sent to the configured model endpoint. The UI notes this when
+  the endpoint is not local.
+- Tools are read-only and scoped to the caller's household. Scan returns a
+  draft; nothing is saved without the user.
+- Only server admins can change the model endpoint (`PUT`/`DELETE
+  /api/ai/settings`). The first registered user is admin; the CLI grants
+  and revokes it. The admin flag is read from the database on every
+  request, so a revoke applies at once.
+- The API key saved in Settings is AES-GCM ciphertext with the key
+  derived from `AI_SECRET` (default `JWT_SECRET`). The API never returns
+  it, and non-admins don't see the base URL.
+- A saved config never uses the `.env` `AI_API_KEY`.
+- Provider errors are logged, not returned.
+- Prompt injection (for example text printed on a box) can change the
+  answer but cannot reach other households or write data.
 
 ## CORS
 
