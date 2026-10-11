@@ -2,7 +2,8 @@
   "nav": {
     "medicines": "Medicines",
     "alerts": "Alerts",
-    "settings": "Settings"
+    "settings": "Settings",
+    "assistant": "Assistant"
   },
   "header": {
     "medicines": "Medicines",
@@ -16,7 +17,8 @@
     "fallback": "MedVault",
     "go_back": "Go back",
     "trash": "Trash",
-    "inventory": "Inventory"
+    "inventory": "Inventory",
+    "assistant": "Assistant"
   },
   "sync": {
     "synced": "Synced",
@@ -397,5 +399,44 @@
     "print": "Print inventory",
     "use_by": "Use by",
     "checked": "Checked"
+  },
+  "ai": {
+    "scan_button": "Scan package with AI",
+    "scanning": "Reading the package…",
+    "scan_done": "Filled from the photo. Check the fields before saving.",
+    "scan_failed": "Couldn't read the photo.",
+    "already_have": "You may already have this:",
+    "match_barcode": "same barcode",
+    "match_name": "same name",
+    "match_ingredient": "same ingredient",
+    "add_anyway": "Save anyway to add it as a new pack.",
+    "disabled_title": "Assistant is not set up",
+    "disabled_description": "A server admin can connect a model in Settings.",
+    "disclaimer": "The assistant suggests medicines from your cabinet. It is not medical advice: follow the leaflet and ask a doctor or pharmacist when in doubt.",
+    "remote_note": "Your messages and inventory are sent to the configured AI provider.",
+    "chat_hint": "Ask what you have for a symptom, or for something similar to a medicine.",
+    "chat_placeholder": "What do I have for a headache?",
+    "chat_failed": "The assistant couldn't answer. Try again.",
+    "thinking": "Thinking…",
+    "send": "Send",
+    "settings_title": "AI assistant",
+    "source_none": "No model configured.",
+    "provider": "Provider",
+    "provider_openai": "OpenAI-compatible (OpenAI, OpenRouter, Ollama, LM Studio…)",
+    "base_url": "Base URL",
+    "model": "Model",
+    "vision_model": "Vision model",
+    "vision_model_placeholder": "Same as model",
+    "api_key": "API key",
+    "api_key_placeholder": "Not needed for most local models. The .env key is not reused.",
+    "api_key_stored": "Stored. Leave empty to keep it.",
+    "api_key_clear": "Remove stored key",
+    "privacy_note": "Medicine names and photos are sent to this endpoint. A local model keeps everything on your network.",
+    "settings_saved": "AI settings saved.",
+    "settings_failed": "Couldn't save AI settings.",
+    "settings_reset": "Use .env default",
+    "settings_reset_done": "Using the .env default.",
+    "source_env": "Using the default model from the server config ({{model}}).",
+    "source_web": "Using {{model}}, set by a server admin."
   }
 }

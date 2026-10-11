@@ -110,7 +110,7 @@ Per-route stacks layered on top:
 ## Data model
 
 ```
-users (id, username, password_hash, active_household_id, ...)
+users (id, username, password_hash, active_household_id, is_admin, ...)
   │
   ├──< memberships (user_id, household_id, role)
   │       │
@@ -124,6 +124,9 @@ users (id, username, password_hash, active_household_id, ...)
   │
   ├──< refresh_tokens (id, user_id, token_hash, expires_at, revoked_at)
   └──< user_settings (user_id, alert_days, notification_method, default_category)
+
+ai_settings (id = 1, provider, base_url, model, vision_model, api_key_enc,
+             updated_by, updated_at)   -- server-wide, set by admins
 ```
 
 - Soft delete: `medicines.deleted_at` for sync propagation;

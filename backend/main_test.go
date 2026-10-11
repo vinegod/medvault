@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vinegod/medvault/backend/internal/assistant"
 	"github.com/vinegod/medvault/backend/internal/database"
 	"github.com/vinegod/medvault/backend/internal/testutil"
 )
@@ -22,6 +23,7 @@ func TestRouter_JoinWithoutAnyHousehold(t *testing.T) {
 		refreshTTL: time.Hour,
 		staticDir:  t.TempDir(),
 		photoDir:   t.TempDir(),
+		ai:         assistant.Options{Secret: []byte(testutil.JWTSecret)},
 	}
 	srv := httptest.NewServer(buildRouter(db, database.NewDrugRegistry(""), &cfg))
 	t.Cleanup(srv.Close)

@@ -197,6 +197,67 @@ export interface MembershipSummary {
   is_active: boolean;
 }
 
+export type AiProvider = "openai" | "anthropic";
+export type AiSource = "web" | "env" | "none";
+
+export interface AiStatus {
+  enabled: boolean;
+  source: AiSource;
+  local: boolean;
+}
+
+// GET /api/ai/settings. The API key is never returned; base_url only to admins.
+export interface AiSettings {
+  provider: AiProvider;
+  base_url: string;
+  model: string;
+  vision_model: string;
+  api_key_set: boolean;
+  source: AiSource;
+  can_edit: boolean;
+}
+
+// PUT /api/ai/settings. Omit api_key to keep the stored key, "" clears it.
+export interface AiSettingsInput {
+  provider: AiProvider;
+  base_url: string;
+  model: string;
+  vision_model: string;
+  api_key?: string;
+}
+
+export interface AiScanDraft {
+  name: string;
+  quantity: number;
+  unit: MedicineUnit;
+  active_ingredient: string | null;
+  expiration_date: string | null;
+  days_after_opening: number | null;
+  barcode: string;
+}
+
+export interface AiMatch {
+  id: string;
+  name: string;
+  reason: "barcode" | "name" | "ingredient";
+}
+
+export interface AiScanResult {
+  draft: AiScanDraft;
+  matches: AiMatch[];
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AiReply {
+  text: string;
+  warning?: string;
+  medicine_ids: string[];
+}
+
 // Export/Import format (for manual JSON backup)
 export interface MedVaultExport {
   version: 1;

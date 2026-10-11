@@ -54,7 +54,7 @@ type tokenResponse struct {
 // Register creates a user plus either a personal household or, with an
 // invite code, a membership in the invited household, in one transaction.
 // RegistrationMode can require an invite or close signup; the first user
-// can always register.
+// can always register and becomes the server admin.
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req models.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -110,8 +110,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback() //nolint:errcheck // superseded by Commit on success
 
 	if _, err = tx.ExecContext(r.Context(),
-		`INSERT INTO users (id, username, password_hash, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO users (id, username, password_hash, created_at, updated_at, is_admin)
+		 VALUES (?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM users))`,
 		userID, req.Username, hash, now, now,
 	); err != nil {
 		api.ServerError(w, "register: insert user", err)

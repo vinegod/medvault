@@ -1,18 +1,23 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "./Icon";
+import { useAiStatus } from "../hooks/useAiStatus";
 
 const tabDefs: { to: string; labelKey: string; icon: IconName }[] = [
   { to: "/medicines", labelKey: "nav.medicines", icon: "pill" },
   { to: "/alerts", labelKey: "nav.alerts", icon: "bell" },
+  { to: "/assistant", labelKey: "nav.assistant", icon: "sparkles" },
   { to: "/settings", labelKey: "nav.settings", icon: "settings" },
 ];
 
 export function BottomNav() {
   const { t } = useTranslation();
+  const { pathname } = useLocation();
+  const ai = useAiStatus(pathname);
+  const tabs = tabDefs.filter((tab) => tab.to !== "/assistant" || ai.enabled);
   return (
     <nav className="no-print" style={nav}>
-      {tabDefs.map((tab) => (
+      {tabs.map((tab) => (
         <NavLink
           key={tab.to}
           to={tab.to}

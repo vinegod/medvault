@@ -20,6 +20,7 @@ import OnboardingHousehold from "./pages/OnboardingHousehold";
 import NotFound from "./pages/NotFound";
 import Trash from "./pages/Trash";
 import InventoryPrint from "./pages/InventoryPrint";
+import Assistant from "./pages/Assistant";
 
 // Server-only routes redirect to /settings if no server is connected.
 function ConnectedOnly() {
@@ -74,6 +75,7 @@ function AppRoutes() {
           <Route path="/household/new" element={<CreateHousehold />} />
           <Route path="/household/join" element={<JoinHousehold />} />
           <Route path="/onboarding/household" element={<OnboardingHousehold />} />
+          <Route path="/assistant" element={<Assistant />} />
         </Route>
       </Route>
 

@@ -43,6 +43,8 @@ code is the primary signal; the `error.code` enum is for client logic
 | `INVITE_REQUIRED` | 400 | Register without `invite_code` while the server runs with `REGISTRATION_MODE=invite`. |
 | `RATE_LIMITED` | 429 | Rate limit exceeded — see the per-endpoint table below. Back off and retry after the window. |
 | `UNAVAILABLE` | 503 | DB ping failed (`/api/ready`); all configured drug DBs failed to open. |
+| `UPSTREAM_ERROR` | 502 | The AI provider failed or returned unusable output. Details are only logged. |
+| `TIMEOUT` | 504 | The AI provider did not answer within `AI_TIMEOUT`. |
 | `INTERNAL` | 500 | Unexpected error. Body is sanitised; the server log has the request id. |
 
 ### Request ID
@@ -60,6 +62,7 @@ grep the server log for the exact request.
 | Per IP | `POST /api/auth/refresh` | 20 / min |
 | Per IP | `GET /api/drugs/search` | 60 / min |
 | Per user | `POST /api/sync` | 30 / min, 1 MB body, 1000 records/request |
+| Per user | `POST /api/ai/scan`, `POST /api/ai/chat` | 10 / min (on top of the 60 / min below) |
 | Per user | All other authenticated endpoints | 60 / min |
 
 ### CORS
@@ -813,6 +816,122 @@ Body shape identical to `GET`. Validation:
 Response `200` with the saved settings.
 
 ---
+
+## AI assistant
+
+One model for the whole server, set by a server admin, else taken from
+the `AI_*` variables. Scan and chat are household-scoped and never write
+data.
+
+### `GET /api/ai/status`
+
+```json
+{ "data": { "enabled": true, "source": "web", "local": true }, "error": null }
+```
+
+`source` is `web` (saved by an admin), `env` or `none`. `local` is true
+when the endpoint is a loopback, private or single-label host.
+
+### `GET /api/ai/settings`
+
+```json
+{
+  "data": {
+    "provider": "openai",
+    "base_url": "http://localhost:11434/v1",
+    "model": "qwen2.5vl:7b",
+    "vision_model": "",
+    "api_key_set": false,
+    "source": "web",
+    "can_edit": true
+  },
+  "error": null
+}
+```
+
+The API key is never returned. `base_url` is empty for non-admins.
+`can_edit` is true for server admins.
+
+### `PUT /api/ai/settings` _(admin only)_
+
+```json
+{
+  "provider": "openai",
+  "base_url": "http://localhost:11434/v1",
+  "model": "qwen2.5vl:7b",
+  "vision_model": "",
+  "api_key": "sk-..."
+}
+```
+
+- `provider`: `openai` (any OpenAI-compatible endpoint) or `anthropic`.
+- `base_url`: optional http(s) URL without credentials, max 300 chars.
+- `model` required, `vision_model` optional (defaults to `model`), max 100 chars each.
+- `api_key`: omitted keeps the stored key, `""` clears it. Required for `anthropic`.
+
+A saved config never uses the `.env` API key. Returns the new settings.
+`403 FORBIDDEN` for non-admins.
+
+### `DELETE /api/ai/settings` _(admin only)_
+
+Removes the saved settings so the `.env` default applies. Returns the new
+settings.
+
+### `POST /api/ai/scan`
+
+`multipart/form-data` with field `photo` (JPEG, PNG or WebP, 5 MB max).
+
+```json
+{
+  "data": {
+    "draft": {
+      "name": "Nurofen Forte",
+      "quantity": 12,
+      "unit": "tablets",
+      "category": "",
+      "active_ingredient": "ibuprofen",
+      "expiration_date": "2027-05-31",
+      "opened_at": null,
+      "days_after_opening": null,
+      "storage_location": "",
+      "barcode": "4820001234567",
+      "notes": ""
+    },
+    "matches": [{ "id": "…", "name": "Nurofen", "reason": "barcode" }]
+  },
+  "error": null
+}
+```
+
+`draft` has the shape of a `POST /api/medicines` body. Fields that fail
+validation are dropped; `name` may be empty. `matches` lists existing
+medicines with the same barcode, name or active ingredient.
+
+### `POST /api/ai/chat`
+
+```json
+{ "messages": [{ "role": "user", "content": "What do I have for a headache?" }] }
+```
+
+1-20 messages, `role` is `user` or `assistant`, content 1-4000 chars,
+the last message from the user.
+
+```json
+{
+  "data": {
+    "text": "You have Paracetamol (10 tablets, until 2027-03-01).",
+    "warning": "",
+    "medicine_ids": ["…"]
+  },
+  "error": null
+}
+```
+
+`warning` is set when the symptoms may need a doctor; the answer is still
+given. `medicine_ids` are inventory items named in `text`.
+
+Errors: `404 NOT_FOUND` when no model is configured, `409 CONFLICT` when
+the stored API key can't be decrypted, `502 UPSTREAM_ERROR`, `504 TIMEOUT`.
 
 ## Drug autofill (public, 60/min/IP)
 
