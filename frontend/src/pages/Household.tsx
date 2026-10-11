@@ -61,10 +61,6 @@ export default function Household() {
   }, [toast]);
 
   useEffect(() => {
-    // reload() flips loading to true synchronously before awaiting the
-    // network call. That's exactly the "fetch + show spinner" pattern;
-    // the lint warning here is a false positive for this shape.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void reload();
   }, [reload]);
 

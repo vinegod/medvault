@@ -37,15 +37,7 @@ export interface LocalMedicine extends Medicine {
 export type SyncStatus = "local" | "synced" | "pending" | "conflict";
 
 export type MedicineUnit =
-  | "tablets"
-  | "capsules"
-  | "ml"
-  | "mg"
-  | "g"
-  | "pieces"
-  | "drops"
-  | "sachets"
-  | "patches";
+  "tablets" | "capsules" | "ml" | "mg" | "g" | "pieces" | "drops" | "sachets" | "patches";
 
 // Form input (what the user fills in)
 export interface MedicineInput {

@@ -10,7 +10,7 @@ RUN npm run build
 # After this step the output lives at /build/backend/static
 
 # Stage 2: Build backend
-FROM golang:1.25-alpine AS backend-builder
+FROM golang:1.27-alpine AS backend-builder
 RUN apk add --no-cache gcc musl-dev
 WORKDIR /build
 COPY backend/go.mod backend/go.sum ./
@@ -21,7 +21,7 @@ RUN CGO_ENABLED=1 go build -o medvault .
 RUN mkdir -p data
 
 # Stage 3: Minimal runtime
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=backend-builder /build/medvault .

@@ -89,11 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // React to server-status changes: load the household list on connect,
-  // clear it on disconnect. The fetch updates state asynchronously after
-  // the network call, so the cascading-render lint warning doesn't apply.
+  // clear it on disconnect.
   useEffect(() => {
     if (status === "connected") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       refreshHouseholds();
     } else {
       setHouseholds([]);
