@@ -70,16 +70,34 @@ separate Node runtime in production.
 
 ### Docker
 
+Requires Docker with the Compose plugin (`docker compose version`).
+
 ```bash
 git clone https://github.com/vinegod/medvault.git
 cd medvault
-cp .env.example .env       # set JWT_SECRET (required)
-docker compose up --build
+cp .env.example .env
+sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 32)|" .env
+docker compose up -d --build
 ```
 
-Open `http://your-server-ip:8080`. Set `PORT` in `.env` to use another
-port; set `BIND_ADDR=127.0.0.1` when a reverse proxy on the same host
-handles TLS.
+Check that it is up (`STATUS` turns `healthy` within a few seconds):
+
+```bash
+docker compose ps
+docker compose logs -f medvault
+```
+
+Open `http://your-server-ip:8080` and register. The first account is the
+server admin. Once everyone has an account, set `REGISTRATION_MODE=invite`
+(or `closed`) in `.env` and run `docker compose up -d` again.
+
+Set `PORT` in `.env` to use another port; set `BIND_ADDR=127.0.0.1` when a
+reverse proxy on the same host handles TLS.
+
+The container has `restart: unless-stopped`: it restarts after a crash and
+starts again after a reboot, as long as the Docker service starts on boot
+(`sudo systemctl enable --now docker` on systemd distros). `docker compose
+down` stops it until the next `docker compose up -d`.
 
 Browsers allow the service worker, `crypto.randomUUID`/`crypto.subtle` and
 the clipboard only on HTTPS or `localhost`. Over plain HTTP on a LAN address,
@@ -94,7 +112,8 @@ Backend:
 
 ```bash
 cd backend
-cp ../.env.example ../.env
+cp ../.env.example .env    # go run reads .env from the current directory
+sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 32)|" .env
 go run .
 ```
 
@@ -126,11 +145,12 @@ project root).
 | `ALLOWED_ORIGINS` | no | `http://localhost:5173` | Comma-separated CORS origins. |
 | `TRUSTED_PROXIES` | no | _empty_ | Comma-separated IPs/CIDRs of reverse proxies (e.g. `127.0.0.1`). List only the proxy's own address; a broad range lets other hosts in it forge the client IP. Requests from these peers take the client IP from `X-Forwarded-For`, so per-IP rate limits apply per client. Leave empty when exposed directly. |
 | `PHOTO_DIR` | no | `./data/photos` | Where uploaded medicine photos are written. |
-| `DRUG_DB_DIR` | no | `./data` | Per-country drug DBs live under `<DIR>/<iso>/drugs.db`. |
+| `DRUG_DB_DIR` | no | `./data` | Per-country drug DBs live under `<DIR>/<iso>/drugs.db`. The Docker image sets `/app/drugs`. |
 | `DRUG_DB_COUNTRY` | no | `ua` | Active country for sync-time autofill. |
 | `BACKUP_DIR` | no | _empty_ | Empty disables scheduled backups. Set to enable. |
 | `BACKUP_RETAIN_DAYS` | no | `14` | Pruning window. `0` keeps forever. |
 | `BACKUP_HOUR` | no | `3` | Hour of day (local time, `0..23`) to run backup. |
+| `TZ` | no | `UTC` | Time zone for `BACKUP_HOUR` and log timestamps, e.g. `Europe/Kyiv`. |
 | `REGISTRATION_MODE` | no | `open` | `open`, `invite` (signup needs a household invite code) or `closed` (admin CLI only). The first user can always register. |
 | `AI_PROVIDER` | no | `openai` | Server default AI provider: `openai` (any OpenAI-compatible endpoint) or `anthropic`. |
 | `AI_BASE_URL` | no | _empty_ | Endpoint base URL, e.g. `http://localhost:11434/v1` for Ollama. Empty means the provider's public API. |
@@ -168,6 +188,51 @@ Static-asset directory layout the binary expects:
 ./data/<iso>/drugs.db       (optional autofill DBs)
 ./backups/medvault-*.db.gz  (when BACKUP_DIR is set)
 ```
+
+### Backup and restore (Docker)
+
+All server data (database and photos) lives in the `medvault-data` Docker
+volume, mounted at `/app/data`. It survives `docker compose down` and
+rebuilds; `docker compose down -v` deletes it.
+
+Daily backups: add to `.env` and run `docker compose up -d`. They run at
+`BACKUP_HOUR` (default 3) in the `TZ` time zone:
+
+```bash
+BACKUP_DIR=/app/data/backups
+TZ=Europe/Kyiv
+```
+
+The backups are in the same volume as the database, so copy them off the
+machine regularly:
+
+```bash
+mkdir -p backups
+docker compose cp medvault:/app/data/backups/. ./backups/
+```
+
+Restore a backup:
+
+```bash
+docker compose stop medvault
+gunzip -k backups/medvault-<timestamp>.db.gz
+docker compose cp backups/medvault-<timestamp>.db medvault:/app/data/medvault.db
+docker compose run --rm --no-deps medvault rm -f /app/data/medvault.db-wal /app/data/medvault.db-shm
+docker compose start medvault
+```
+
+Backups contain the database only. To keep photos too, copy
+`/app/data/photos` the same way. Users can also export their inventory
+from Settings (optionally encrypted).
+
+### Upgrading
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Migrations run automatically at startup. Back up first.
 
 ## API
 

@@ -1,0 +1,11 @@
+.git
+.env
+**/.env
+frontend/node_modules
+frontend/dist
+backend/medvault
+backend/data/*.db*
+backend/data/photos
+backend/data/backups
+backend/data/**/*.csv
+backups
