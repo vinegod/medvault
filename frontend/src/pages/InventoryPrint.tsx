@@ -49,34 +49,36 @@ export default function InventoryPrint() {
         </span>
       </h2>
 
-      <table style={table}>
-        <thead>
-          <tr>
-            <th style={th} aria-label={t("inventory.checked")} />
-            <th style={th}>{t("medicine_form.name")}</th>
-            <th style={th}>{t("medicine_form.active_ingredient")}</th>
-            <th style={th}>{t("medicine_form.quantity")}</th>
-            <th style={th}>{t("inventory.use_by")}</th>
-            <th style={th}>{t("medicine_form.storage_location")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((m) => (
-            <tr key={m.id}>
-              <td style={td}>☐</td>
-              <td style={td}>{m.name}</td>
-              <td style={td}>{m.active_ingredient}</td>
-              <td style={td}>
-                {m.quantity} {t(`units.${m.unit}`)}
-              </td>
-              <td style={td}>
-                {effectiveExpiration(m.expiration_date, m.opened_at, m.days_after_opening)}
-              </td>
-              <td style={td}>{m.storage_location}</td>
+      <div className="table-scroll">
+        <table style={table}>
+          <thead>
+            <tr>
+              <th style={th} aria-label={t("inventory.checked")} />
+              <th style={th}>{t("medicine_form.name")}</th>
+              <th style={th}>{t("medicine_form.active_ingredient")}</th>
+              <th style={th}>{t("medicine_form.quantity")}</th>
+              <th style={th}>{t("inventory.use_by")}</th>
+              <th style={th}>{t("medicine_form.storage_location")}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((m) => (
+              <tr key={m.id}>
+                <td style={td}>☐</td>
+                <td style={td}>{m.name}</td>
+                <td style={td}>{m.active_ingredient}</td>
+                <td style={td}>
+                  {m.quantity} {t(`units.${m.unit}`)}
+                </td>
+                <td style={td}>
+                  {effectiveExpiration(m.expiration_date, m.opened_at, m.days_after_opening)}
+                </td>
+                <td style={td}>{m.storage_location}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

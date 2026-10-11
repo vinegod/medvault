@@ -3,6 +3,8 @@ import { getMeta, setMeta } from "../services/db";
 
 export type Theme = "system" | "light" | "dark";
 
+let current: Theme = "system";
+
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
   if (theme === "system") {
@@ -13,26 +15,26 @@ function applyTheme(theme: Theme) {
   }
 }
 
+// initTheme applies the stored theme at startup and follows OS changes
+// while the theme is "system".
+export async function initTheme() {
+  applyTheme(current);
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (current === "system") applyTheme("system");
+  });
+  current = ((await getMeta("theme")) ?? "system") as Theme;
+  applyTheme(current);
+}
+
 export function useTheme() {
-  const [theme, setThemeState] = useState<Theme>("system");
+  const [theme, setThemeState] = useState<Theme>(current);
 
   useEffect(() => {
-    getMeta("theme").then((stored) => {
-      const t = (stored ?? "system") as Theme;
-      setThemeState(t);
-      applyTheme(t);
-    });
+    getMeta("theme").then((stored) => setThemeState((stored ?? "system") as Theme));
   }, []);
 
-  useEffect(() => {
-    if (theme !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => applyTheme("system");
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [theme]);
-
   async function setTheme(t: Theme) {
+    current = t;
     setThemeState(t);
     applyTheme(t);
     await setMeta("theme", t);
