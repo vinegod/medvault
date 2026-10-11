@@ -4,11 +4,11 @@ How to get a working MedVault dev environment up.
 
 ## Prerequisites
 
-- **Go** ≥ 1.22 (for the backend)
-- **Node.js** ≥ 20 (for the frontend dev server)
+- **Go** ≥ 1.25 and a C compiler (`gcc`; `go-sqlite3` needs CGO)
+- **Node.js** 24 (see `frontend/.nvmrc`)
 - **SQLite** CLI (optional — handy for poking at the database)
-- **Docker** + **docker compose** (only needed if you want to run the
-  packaged image instead of `go run`)
+- **Docker** + **Docker Compose** ≥ 2.24.4 (only needed if you want to run
+  the packaged image instead of `go run`)
 - **Python** ≥ 3.10 (only needed if you want to regenerate the drug
   autofill database from a CSV)
 
@@ -17,32 +17,33 @@ How to get a working MedVault dev environment up.
 ```bash
 git clone https://github.com/vinegod/medvault.git
 cd medvault
-cp .env.example .env
 ```
-
-Edit `.env` and set `JWT_SECRET` to 32+ random bytes:
-
-```bash
-echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
-```
-
-The full list of environment variables is in [README.md](../README.md#configuration).
 
 ## Run the backend
 
+The server reads `.env` from its working directory, so for `go run` the
+file is `backend/.env` (Docker uses `.env` in the project root). Create it
+and set `JWT_SECRET` to 32+ random bytes:
+
 ```bash
 cd backend
-go mod tidy
+cp ../.env.example .env
+sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 32)|" .env
 go run .
 ```
+
+On macOS use `sed -i ''`. The full list of environment variables is in
+[README.md](../README.md#configuration).
 
 The server listens on `:8080` (or `PORT` from `.env`). On first boot it:
 
 - Creates `./data/medvault.db` and runs every numbered SQL file under
   `./migrations/` in order.
-- Logs the startup banner: `MedVault dev starting on port 8080`.
-- Logs whether any drug autofill DBs were registered (`drug DBs:
-  registered`) or none (`drug DBs: none found`).
+- Logs the startup banner: `MedVault dev starting on port 8080`
+  (release builds print the version instead of `dev`).
+- Logs whether any drug autofill DBs were registered (`drug DBs
+  registered (lazy-open): [ua]`) or none (`drug DBs: none found under
+  ./data (autofill disabled)`).
 
 Health check:
 
@@ -66,22 +67,33 @@ Vite's dev server listens on `http://localhost:5173` and proxies
 `/api/*` to the Go backend on `:8080`. Open it in a browser, register
 a user, and add a medicine.
 
+`npm run build` writes the production bundle to `backend/static/`, which
+`go run .` then serves on `http://localhost:8080`.
+
 ## Run the whole thing under Docker
 
-This is what end users run.
+This is what end users run; the README's
+[Quick start](../README.md#docker) has the full steps. It uses `.env` in
+the project root.
 
 ```bash
-docker compose up --build
+cp .env.example .env
+sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 32)|" .env
+docker compose up -d --build
+docker compose ps        # STATUS: healthy
 ```
 
 The image is multi-stage:
-1. `node` builds the React bundle into `frontend/dist/`.
-2. `golang` compiles the backend with CGO (needed for `go-sqlite3`)
-   and copies the built frontend into `./static/`.
-3. The runtime image is Alpine + the Go binary + `./static/`.
+1. `node` builds the React bundle.
+2. `golang` compiles the backend with CGO (needed for `go-sqlite3`).
+3. The runtime image is Alpine + the Go binary + `./static/` +
+   `./migrations/` + drug DBs from `backend/data/<iso>/` under
+   `/app/drugs/`.
 
-`docker-compose.yml` mounts `./data` into the container so the
-SQLite DB persists across rebuilds.
+`docker-compose.yml` keeps `/app/data` (database, photos) in the named
+volume `medvault-data`, so it persists across rebuilds. The container
+restarts automatically (`restart: unless-stopped`) and reports health
+from `/api/ready`.
 
 ## Tests
 
@@ -96,6 +108,7 @@ Frontend:
 
 ```bash
 cd frontend
+npx vitest run
 npx tsc --noEmit
 npx eslint src --max-warnings 0
 npx prettier --check src
@@ -179,8 +192,18 @@ AI_API_KEY=sk-ant-...
 AI_MODEL=claude-haiku-5-5
 ```
 
-From Docker, reach Ollama on the host via `http://host.docker.internal:11434/v1`
-(add `extra_hosts: ["host.docker.internal:host-gateway"]` on Linux).
+From Docker, reach Ollama on the host via `http://host.docker.internal:11434/v1`.
+
+On Linux, add this to the `medvault` service in `docker-compose.yml` for
+`host.docker.internal` to resolve:
+
+```yaml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Ollama listens on `127.0.0.1` by default; start it with
+`OLLAMA_HOST=0.0.0.0` so the container can reach it.
 
 To debug prompts in the Genkit Dev UI, run the backend with
 `GENKIT_ENV=dev` under `genkit start -- go run .`.
@@ -191,15 +214,20 @@ To debug prompts in the Genkit Dev UI, run the backend with
 medvault/
 ├── backend/                # Go API + static SPA host
 │   ├── main.go
+│   ├── admin.go            # reset-password, grant-admin, revoke-admin CLI
 │   ├── go.mod
 │   ├── internal/
 │   │   ├── api/            # response envelope helpers
+│   │   ├── assistant/      # AI assistant: photo scan, inventory chat (Genkit)
 │   │   ├── auth/           # JWT + bcrypt
 │   │   ├── database/       # connection, migrations, drug DB registry, backups
 │   │   ├── handlers/       # one file per endpoint group
-│   │   ├── middleware/     # Recover, RequestID, Logging, RequireAuth, RequireHousehold, RateLimiter
-│   │   └── models/         # request/response structs + Validate()
+│   │   ├── middleware/     # Recover, RequestID, Logging, RequireAuth, RequireHousehold, RequireAdmin, RateLimiter
+│   │   ├── models/         # request/response structs + Validate()
+│   │   ├── testutil/       # shared test helpers
+│   │   └── version/        # build version
 │   ├── migrations/         # numbered SQL files
+│   ├── static/             # built frontend (npm run build)
 │   └── data/               # runtime — DB + photos + drug DBs (created on first boot)
 │
 ├── frontend/               # React + TypeScript + Vite PWA
@@ -220,11 +248,14 @@ medvault/
 ├── docs/
 │   ├── API.md              # full HTTP API reference
 │   ├── ARCHITECTURE.md
+│   ├── HTTPS.md            # Tailscale and Caddy setups
 │   ├── SECURITY.md
 │   ├── SYNC.md
 │   └── SETUP_GUIDE.md      # this file
 │
 ├── docker-compose.yml
+├── docker-compose.caddy.yml # optional HTTPS proxy
+├── Caddyfile
 ├── Dockerfile
 ├── .env.example
 └── README.md
@@ -234,7 +265,7 @@ medvault/
 
 SQLite under `./data/medvault.db`. Tables (see `backend/migrations/`):
 
-- `users`, `refresh_tokens`, `user_settings`
+- `users`, `refresh_tokens`, `user_settings`, `ai_settings`
 - `households`, `memberships`, `household_invites`, `household_audit`
 - `medicines` (soft-delete via `deleted_at`)
 

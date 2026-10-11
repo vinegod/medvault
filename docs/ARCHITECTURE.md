@@ -9,7 +9,7 @@ A single Go binary that:
 - Stores everything in one local SQLite file (WAL mode).
 - Optionally serves shipped drug databases (one SQLite per country) for
   client-side autofill.
-- Optionally writes daily encrypted-at-rest backups via `VACUUM INTO` +
+- Optionally writes daily backups via `VACUUM INTO` +
   gzip.
 
 ```
@@ -155,6 +155,9 @@ ai_settings (id = 1, provider, base_url, model, vision_model, api_key_enc,
 ./backups/
 └── medvault-2026-05-06T03-00-00Z.db.gz
 ```
+
+In the Docker image, `./data` is `/app/data` (the `medvault-data` volume)
+and drug DBs are baked into `/app/drugs/<iso>/drugs.db`.
 
 Photos are referenced from the `medicines.photo_hash` column. Multiple
 medicines with the same photo (e.g. duplicated rows) share one blob.

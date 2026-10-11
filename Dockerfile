@@ -17,14 +17,21 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=1 go build -o medvault .
+# Drug autofill DBs (data/<iso>/drugs.db), if present in the checkout.
+RUN mkdir -p data
 
 # Stage 3: Minimal runtime
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=backend-builder /build/medvault .
 COPY --from=frontend-builder /build/backend/static ./static
+COPY --from=backend-builder /build/data ./drugs
 COPY backend/migrations ./migrations
 RUN mkdir -p /app/data
+# Drug DBs live outside the /app/data volume so image updates replace them.
+ENV DRUG_DB_DIR=/app/drugs
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT:-8080}/api/ready" >/dev/null || exit 1
 CMD ["./medvault"]
